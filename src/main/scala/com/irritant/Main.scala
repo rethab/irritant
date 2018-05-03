@@ -12,10 +12,10 @@ object Main {
 
   /**
    * missing functionality:
-   *  - dynamically determine sprint --> use 'sprint IN openSprints()' jira has no good api for this
+   *  - post tickets to slack that were deployed
    *  - find issues that are not in testing
    *  - pagination for jira issues
-   *  - post tickets to slack that were deployed
+   *  - dynamically determine sprint --> use 'sprint IN openSprints()' jira has no good api for this
    */
 
   def main(args: Array[String]): Unit = {

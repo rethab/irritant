@@ -1,5 +1,6 @@
 package com.irritant
 
+import java.io.File
 import java.net.URI
 
 import com.irritant.systems.jira.JiraUser
@@ -24,6 +25,10 @@ case class User(
   prettyName: String,
   jira: JiraUser,
   slack: SlackUser
+)
+
+case class GitConfig(
+  repo: File
 )
 
 object Config {
