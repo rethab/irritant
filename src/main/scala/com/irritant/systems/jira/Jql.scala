@@ -1,23 +1,38 @@
 package com.irritant.systems.jira
 
+import cats.data.NonEmptyList
+import cats.implicits._
+
 object Jql {
 
-  sealed trait Expr
+  sealed trait Expr {
+    def compile: String = Expr.compile(this)
+  }
   case class And(lhs: Expr, rhs: Expr) extends Expr
   case class Or(lhs: Expr, rhs: Expr) extends Expr
-  case class Creator(name: String) extends Expr
-  case class Sprint(number: Int) extends Expr
-  case class Status(name: String) extends Expr
-  case object OpenSprints extends Expr
+  case class In(lhs: Expr, rhs: Expr) extends Expr
+  case class Eq(lhs: Expr, rhs: Expr) extends Expr
+  case class Field(name: String) extends Expr
+  case class Expression(name: String) extends Expr
+  case class Value(name: String) extends Expr
+  case class Values(vs: NonEmptyList[String]) extends Expr
 
   object Expr {
     def compile(expr: Expr): String = expr match {
-      case And(lhs, rhs) => s"(${Expr.compile(lhs)} AND ${Expr.compile(rhs)})"
-      case Or(lhs, rhs) => s"(${Expr.compile(lhs)} OR ${Expr.compile(rhs)})"
-      case Creator(name) => s"creator = '$name'"
-      case Sprint(number) => s"Sprint = '$number'"
-      case Status(name) => s"status = '$name'"
-      case OpenSprints => s"sprint IN openSprints()"
+      case And(lhs, rhs) => show"(${lhs.compile} AND ${rhs.compile})"
+      case Or(lhs, rhs) => show"(${lhs.compile} OR ${rhs.compile})"
+      case In(lhs, rhs) => show"(${lhs.compile} IN ${rhs.compile})"
+      case Eq(lhs, rhs) => show"(${lhs.compile} = ${rhs.compile})"
+      case Field(name) => name
+      case Expression(name) => name
+      case Value(name) => show"'$name'"
+      case Values(names) => show"(${names.toList.mkString("'", ",", "'")})"
     }
+  }
+
+  object Predef {
+    val OpenSprints: Expr = In(Field("sprint"), Expression("openSprints()"))
+    def EqStatus(status: String): Expr = Eq(Field("status"), Value(status))
+    def InKeys(keys: NonEmptyList[String]): Expr = In(Field("key"), Values(keys))
   }
 }

@@ -1,7 +1,13 @@
 package com.irritant
 
+import java.io.File
+
 import akka.actor.ActorSystem
+import cats.data.NonEmptyList
+import cats.implicits._
+import com.irritant.systems.git.Git
 import com.irritant.systems.jira.Jira
+import com.irritant.systems.jira.Jira.Ticket
 import com.irritant.systems.slack.Slack
 
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -12,7 +18,7 @@ object Main {
 
   /**
    * missing functionality:
-   *  - post tickets to slack that were deployed
+   *  - ticket links in slack should not link to api but real/user jira instance
    *  - find issues that are not in testing
    *  - pagination for jira issues
    *  - dynamically determine sprint --> use 'sprint IN openSprints()' jira has no good api for this
@@ -24,11 +30,31 @@ object Main {
       implicit val actorSystem: ActorSystem = as
       implicit val ec: ExecutionContext = actorSystem.dispatcher
 
+      val gitCfg = GitConfig(new File("/home/rethab/dev/test-project"))
       val users = Users(config.users)
       val slack = new Slack(config.slack, users)(actorSystem)
-      Jira.withJira(config.jira) { jira =>
-        val issues = jira.inTestingWithoutInstructions()
-        slack.nag(issues)
+      Git.withGit(gitCfg) { git =>
+        val Some((start, end)) = git.guessRange()
+
+        val maybeTickets = git.showDiff(start, end).flatMap(c => Ticket.fromCommitMessage(c.msg)).toList.toNel
+        maybeTickets match {
+          case None => Future.successful(println("No tickets from commits"))
+          case Some(tickets) =>
+            Jira.withJira(config.jira) { jira =>
+              val maybeIssuesForTesting: Option[NonEmptyList[(User, NonEmptyList[Ticket])]] = jira
+                .findTesters(users, tickets)
+                .collect { case (ticket, Some(tester)) => (ticket, tester)}
+                .groupByNel(_._2)
+                .mapValues(_.map(_._1))
+                .toList.toNel
+
+              maybeIssuesForTesting match {
+                case None => Future.successful(())
+                case Some(issuesForTesting) => slack.readyForTesting(issuesForTesting)
+              }
+            }
+        }
+
       }
 
     }

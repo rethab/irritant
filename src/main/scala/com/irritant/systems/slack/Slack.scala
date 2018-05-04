@@ -4,10 +4,11 @@ import akka.Done
 import akka.actor.ActorSystem
 import cats.data.NonEmptyList
 import com.atlassian.jira.rest.client.api.domain.Issue
-import com.irritant.systems.jira.JiraUser
 import com.irritant.{SlackCfg, User, Users}
+import com.irritant.systems.jira.Jira.Implicits._
 import slack.api.SlackApiClient
 import cats.implicits._
+import com.irritant.systems.jira.Jira.{JiraUser, Ticket}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.control.NonFatal
@@ -58,6 +59,22 @@ class Slack(config: SlackCfg, users: Users)(implicit actorSystem: ActorSystem) {
       .map(_ => Done)
   }
 
+  def readyForTesting(forTesting: NonEmptyList[(User, NonEmptyList[Ticket])]): Future[Done] =
+    forTesting
+      .map { case (user, tickets) =>
+        api
+          .postChatMessage(
+            channelId = user.slack.userId,
+            text = readyForTestingMsg(user, tickets),
+            username = Some("Deployment Nagger"))
+          .map { s =>
+            println(show"Notified ${user.prettyName} about ${tickets.size} issues ready for testing")
+            s
+          }
+      }
+      .sequence[Future, String]
+      .map(_ => Done)
+
 }
 
 object Slack {
@@ -73,6 +90,20 @@ object Slack {
           |Hi ${user.prettyName},
           |
           |the following issues are missing test instructions:
+          |$issueList
+          |
+          |Thanks :)
+          |
+        """.stripMargin
+  }
+
+  private def readyForTestingMsg(user: User, tickets: NonEmptyList[Ticket]): String = {
+    val issueList = tickets.map(i => show" - ${i.key}").toList.mkString("\n")
+
+    show"""
+          |Hi ${user.prettyName},
+          |
+          |the following issues are ready for testing:
           |$issueList
           |
           |Thanks :)

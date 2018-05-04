@@ -3,7 +3,9 @@ package com.irritant
 import java.io.File
 import java.net.URI
 
-import com.irritant.systems.jira.JiraUser
+import cats.Order
+import cats.implicits._
+import com.irritant.systems.jira.Jira.JiraUser
 import com.irritant.systems.slack.SlackUser
 import pureconfig.{ConfigReader, ConvertHelpers}
 
@@ -26,6 +28,10 @@ case class User(
   jira: JiraUser,
   slack: SlackUser
 )
+
+object User {
+  implicit val userOrder: Order[User] = Order.by(_.prettyName)
+}
 
 case class GitConfig(
   repo: File
