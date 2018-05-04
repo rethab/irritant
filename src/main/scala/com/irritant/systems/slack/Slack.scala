@@ -2,7 +2,7 @@ package com.irritant.systems.slack
 
 import akka.Done
 import akka.actor.ActorSystem
-import cats.data.NonEmptyList
+import cats.NonEmptyTraverse
 import com.atlassian.jira.rest.client.api.domain.Issue
 import com.irritant.{SlackCfg, User, Users}
 import com.irritant.systems.jira.Jira.Implicits._
@@ -59,9 +59,9 @@ class Slack(config: SlackCfg, users: Users)(implicit actorSystem: ActorSystem) {
       .map(_ => Done)
   }
 
-  def readyForTesting(forTesting: NonEmptyList[(User, NonEmptyList[Ticket])]): Future[Done] =
+  def readyForTesting[T[_] : NonEmptyTraverse](forTesting: T[(User, T[Ticket])]): Future[Done] =
     forTesting
-      .map { case (user, tickets) =>
+      .traverse[Future, String] { case (user, tickets) =>
         api
           .postChatMessage(
             channelId = user.slack.userId,
@@ -72,7 +72,6 @@ class Slack(config: SlackCfg, users: Users)(implicit actorSystem: ActorSystem) {
             s
           }
       }
-      .sequence[Future, String]
       .map(_ => Done)
 
 }
@@ -80,11 +79,15 @@ class Slack(config: SlackCfg, users: Users)(implicit actorSystem: ActorSystem) {
 object Slack {
   type Error = String
 
-  private def missingTestInstructions(user: User, is: NonEmptyList[Issue]): String = {
+  case class SlackUser(userId: String) extends AnyVal
+
+  case class SlackTeam(name: String) extends AnyVal
+
+  private def missingTestInstructions[R[_]: NonEmptyTraverse](user: User, is: R[Issue]): String = {
     def issueTitle(i: Issue): String = Option(i.getDescription).getOrElse(i.getKey)
     val issueList: String = is
-      .map { i => show" - ${issueTitle(i)} : ${i.getSelf.toString}" }
-      .toList.mkString("\n")
+      .map(i => show" - ${issueTitle(i)} : ${i.getSelf.toString}")
+      .intercalate("\n")
 
     show"""
           |Hi ${user.prettyName},
@@ -97,8 +100,8 @@ object Slack {
         """.stripMargin
   }
 
-  private def readyForTestingMsg(user: User, tickets: NonEmptyList[Ticket]): String = {
-    val issueList = tickets.map(i => show" - ${i.key}").toList.mkString("\n")
+  private def readyForTestingMsg[R[_]: NonEmptyTraverse](user: User, tickets: R[Ticket]): String = {
+    val issueList = tickets.map(i => show" - ${i.key}").intercalate("\n")
 
     show"""
           |Hi ${user.prettyName},

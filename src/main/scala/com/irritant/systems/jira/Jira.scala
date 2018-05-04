@@ -4,8 +4,7 @@ import com.atlassian.jira.rest.client.api.JiraRestClient
 import com.atlassian.jira.rest.client.api.domain.Issue
 import com.atlassian.jira.rest.client.internal.async.AsynchronousJiraRestClientFactory
 import com.irritant.{JiraCfg, User, Users}
-import cats.data.NonEmptyList
-import cats.{Eq, Order, Show}
+import cats.{Eq, NonEmptyTraverse, Order, Show}
 import cats.implicits._
 import com.irritant.systems.jira.Jql.{And, Expr}
 import com.irritant.systems.jira.Jql.Predef._
@@ -30,11 +29,11 @@ class Jira (config: JiraCfg) {
 
   def inTestingWithoutInstructions(): Iterable[Issue] =
     restClient.getSearchClient
-      .searchJql(Expr.compile(currentlyInTesting()), null, null, AllFields)
+      .searchJql(currentlyInTesting().compile, null, null, AllFields)
       .claim()
       .getIssues.asScala.filterNot(containsTestInstructions)
 
-  def findTesters(users: Users, tickets: NonEmptyList[Ticket]): NonEmptyList[(Ticket, Option[User])] = {
+  def findTesters[R[_] : NonEmptyTraverse](users: Users, tickets: R[Ticket]): R[(Ticket, Option[User])] = {
     val issues = restClient.getSearchClient
       .searchJql(byKeys(tickets).compile)
       .claim()
@@ -81,7 +80,7 @@ object Jira {
   private def currentlyInTesting(): Expr =
     And(EqStatus("In Testing"), OpenSprints)
 
-  private def byKeys(tickets: NonEmptyList[Ticket]): Expr =
+  private def byKeys[R[_] : NonEmptyTraverse](tickets: R[Ticket]): Expr =
     InKeys(tickets.map(_.key))
 
   private def containsTestInstructions(i: Issue): Boolean =

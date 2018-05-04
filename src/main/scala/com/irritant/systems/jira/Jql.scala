@@ -1,38 +1,46 @@
 package com.irritant.systems.jira
 
-import cats.data.NonEmptyList
+import cats.NonEmptyTraverse
 import cats.implicits._
 
 object Jql {
 
   sealed trait Expr {
-    def compile: String = Expr.compile(this)
+    def compile: String
   }
-  case class And(lhs: Expr, rhs: Expr) extends Expr
-  case class Or(lhs: Expr, rhs: Expr) extends Expr
-  case class In(lhs: Expr, rhs: Expr) extends Expr
-  case class Eq(lhs: Expr, rhs: Expr) extends Expr
-  case class Field(name: String) extends Expr
-  case class Expression(name: String) extends Expr
-  case class Value(name: String) extends Expr
-  case class Values(vs: NonEmptyList[String]) extends Expr
+  case class And(lhs: Expr, rhs: Expr) extends Expr {
+    def compile: String = show"(${lhs.compile} AND ${rhs.compile})"
+  }
+  case class Or(lhs: Expr, rhs: Expr) extends Expr {
+    override def compile: String = show"(${lhs.compile} OR ${rhs.compile})"
+  }
+  case class In(lhs: Expr, rhs: Expr) extends Expr {
+    override def compile: String = show"(${lhs.compile} IN ${rhs.compile})"
 
-  object Expr {
-    def compile(expr: Expr): String = expr match {
-      case And(lhs, rhs) => show"(${lhs.compile} AND ${rhs.compile})"
-      case Or(lhs, rhs) => show"(${lhs.compile} OR ${rhs.compile})"
-      case In(lhs, rhs) => show"(${lhs.compile} IN ${rhs.compile})"
-      case Eq(lhs, rhs) => show"(${lhs.compile} = ${rhs.compile})"
-      case Field(name) => name
-      case Expression(name) => name
-      case Value(name) => show"'$name'"
-      case Values(names) => show"(${names.toList.mkString("'", ",", "'")})"
-    }
   }
+  case class Eq(lhs: Expr, rhs: Expr) extends Expr {
+    override def compile: String = show"(${lhs.compile} = ${rhs.compile})"
+  }
+  case class Field(name: String) extends Expr {
+    override def compile: String = name
+
+  }
+  case class Expression(name: String) extends Expr {
+    override def compile: String = name
+
+  }
+  case class Value(name: String) extends Expr {
+    override def compile: String = show"'$name'"
+
+  }
+  case class Values[R[_] : NonEmptyTraverse](vs: R[Value]) extends Expr {
+    override def compile: String = show"(${vs.map(_.name).intercalate(",")})"
+  }
+
 
   object Predef {
     val OpenSprints: Expr = In(Field("sprint"), Expression("openSprints()"))
     def EqStatus(status: String): Expr = Eq(Field("status"), Value(status))
-    def InKeys(keys: NonEmptyList[String]): Expr = In(Field("key"), Values(keys))
+    def InKeys[R[_] : NonEmptyTraverse](keys: R[String]): Expr = In(Field("key"), Values(keys.map(Value.apply)))
   }
 }

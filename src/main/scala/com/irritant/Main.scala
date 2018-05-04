@@ -10,7 +10,7 @@ import com.irritant.systems.jira.Jira
 import com.irritant.systems.jira.Jira.Ticket
 import com.irritant.systems.slack.Slack
 
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 
 
@@ -25,10 +25,9 @@ object Main {
    */
 
   def main(args: Array[String]): Unit = {
-    runWithConfig { case (config, as) =>
+    val exitCode = runWithConfig { case (config, as) =>
 
       implicit val actorSystem: ActorSystem = as
-      implicit val ec: ExecutionContext = actorSystem.dispatcher
 
       val gitCfg = GitConfig(new File("/home/rethab/dev/test-project"))
       val users = Users(config.users)
@@ -56,23 +55,26 @@ object Main {
         }
 
       }
-
     }
+    sys.exit(exitCode)
   }
 
-  def runWithConfig[A](act: (Config, ActorSystem) => Future[A]): A = {
+  def runWithConfig[A](act: (Config, ActorSystem) => Future[A]): Int = {
     pureconfig.loadConfig[Config] match {
       case Left(errors) =>
-        sys.error("Failed to read config: " + errors.toList.mkString(", "))
-        sys.exit(1)
+        System.err.println(show"Failed to read config: ${errors.toList.mkString(", ")}")
+        1
       case Right(config) =>
 
         implicit val actorSystem: ActorSystem = ActorSystem("irritant")
         try {
           Await.result(act(config, actorSystem), 30.seconds)
+          ()
         } finally {
           Await.result(actorSystem.terminate(), 10.seconds)
+          ()
         }
+        0
     }
 
   }

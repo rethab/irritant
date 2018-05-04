@@ -6,7 +6,7 @@ import java.net.URI
 import cats.Order
 import cats.implicits._
 import com.irritant.systems.jira.Jira.JiraUser
-import com.irritant.systems.slack.SlackUser
+import com.irritant.systems.slack.Slack.SlackUser
 import pureconfig.{ConfigReader, ConvertHelpers}
 
 

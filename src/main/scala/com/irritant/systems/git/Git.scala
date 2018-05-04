@@ -28,7 +28,7 @@ class Git(cfg: GitConfig) {
       .take(2).toSeq
 
     versions match {
-      case latestTag +: prevTag +: _ => Some(latestTag, prevTag)
+      case latestTag +: prevTag +: _ => Some((latestTag, prevTag))
       case _ => None
     }
   }
