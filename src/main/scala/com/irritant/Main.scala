@@ -33,28 +33,32 @@ object Main {
       val users = Users(config.users)
       val slack = new Slack(config.slack, users)(actorSystem)
       Git.withGit(gitCfg) { git =>
-        val Some((start, end)) = git.guessRange()
+        for {
+          range <- git.guessRange().map(_.get)
+          maybeTickets <- git.showDiff(range._1, range._2).map(_.flatMap(c => Ticket.fromCommitMessage(c.msg)).toList.toNel)
+        } yield {
+          maybeTickets match {
+            case None => Future.successful(println("No tickets from commits"))
+            case Some(tickets) =>
+              Jira.withJira(config.jira) { jira =>
+                val maybeIssuesForTesting: Option[NonEmptyList[(User, NonEmptyList[Ticket])]] = jira
+                  .findTesters(users, tickets)
+                  .collect { case (ticket, Some(tester)) => (ticket, tester)}
+                  .groupByNel(_._2)
+                  .mapValues(_.map(_._1))
+                  .toList.toNel
 
-        val maybeTickets = git.showDiff(start, end).flatMap(c => Ticket.fromCommitMessage(c.msg)).toList.toNel
-        maybeTickets match {
-          case None => Future.successful(println("No tickets from commits"))
-          case Some(tickets) =>
-            Jira.withJira(config.jira) { jira =>
-              val maybeIssuesForTesting: Option[NonEmptyList[(User, NonEmptyList[Ticket])]] = jira
-                .findTesters(users, tickets)
-                .collect { case (ticket, Some(tester)) => (ticket, tester)}
-                .groupByNel(_._2)
-                .mapValues(_.map(_._1))
-                .toList.toNel
-
-              maybeIssuesForTesting match {
-                case None => Future.successful(())
-                case Some(issuesForTesting) => slack.readyForTesting(issuesForTesting)
+                maybeIssuesForTesting match {
+                  case None => Future.successful(())
+                  case Some(issuesForTesting) => slack.readyForTesting(issuesForTesting)
+                }
               }
-            }
+          }
+
         }
 
-      }
+
+      }.unsafeToFuture().flatten
     }
     sys.exit(exitCode)
   }
