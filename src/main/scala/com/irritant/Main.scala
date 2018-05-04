@@ -3,85 +3,71 @@ package com.irritant
 import java.io.File
 
 import akka.actor.ActorSystem
-import cats.data.NonEmptyList
+import cats.effect.IO
 import cats.implicits._
+import com.irritant.Commands.{Command, Ctx}
+import com.irritant.Commands.Command.NotifyDeployedTickets
 import com.irritant.systems.git.Git
 import com.irritant.systems.jira.Jira
-import com.irritant.systems.jira.Jira.Ticket
 import com.irritant.systems.slack.Slack
-
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration._
-
 
 object Main {
 
   /**
    * missing functionality:
    *  - ticket links in slack should not link to api but real/user jira instance
+   *  - fix Jira's IO impl (remove 'claim', correctly use IO)
    *  - find issues that are not in testing
    *  - pagination for jira issues
    *  - dynamically determine sprint --> use 'sprint IN openSprints()' jira has no good api for this
    */
-
   def main(args: Array[String]): Unit = {
-    val exitCode = runWithConfig { case (config, as) =>
-
-      implicit val actorSystem: ActorSystem = as
-
-      val gitCfg = GitConfig(new File("/home/rethab/dev/test-project"))
-      val users = Users(config.users)
-      val slack = new Slack(config.slack, users)(actorSystem)
-      Git.withGit(gitCfg) { git =>
-        for {
-          range <- git.guessRange().map(_.get)
-          maybeTickets <- git.showDiff(range._1, range._2).map(_.flatMap(c => Ticket.fromCommitMessage(c.msg)).toList.toNel)
-        } yield {
-          maybeTickets match {
-            case None => Future.successful(println("No tickets from commits"))
-            case Some(tickets) =>
-              Jira.withJira(config.jira) { jira =>
-                val maybeIssuesForTesting: Option[NonEmptyList[(User, NonEmptyList[Ticket])]] = jira
-                  .findTesters(users, tickets)
-                  .collect { case (ticket, Some(tester)) => (ticket, tester)}
-                  .groupByNel(_._2)
-                  .mapValues(_.map(_._1))
-                  .toList.toNel
-
-                maybeIssuesForTesting match {
-                  case None => Future.successful(())
-                  case Some(issuesForTesting) => slack.readyForTesting(issuesForTesting)
+    argParser.parse(args, Arguments()) match {
+      case None =>
+        sys.exit(1)
+      case Some(arguments) =>
+        pureconfig.loadConfig[Config] match {
+          case Left(errors) =>
+            System.err.println(show"Failed to read config: ${errors.toList.mkString(", ")}")
+            sys.exit(1)
+          case Right(config) =>
+            IO(ActorSystem("irritant"))
+              .bracket { actorSystem =>
+                Git.withGit(GitConfig(arguments.gitPath)) { git =>
+                  Jira.withJira(config.jira) { jira =>
+                    val users = Users(config.users)
+                    val slack = new Slack(config.slack, users)(actorSystem)
+                    val ctx = Ctx(users, git, slack, jira)
+                    arguments.command.get.runCommand(ctx)
+                  }
                 }
-              }
-          }
-
+              } { actorSystem =>
+                IO.fromFuture(IO(actorSystem.terminate())) *> IO.unit
+              }.unsafeRunSync()
         }
-
-
-      }.unsafeToFuture().flatten
     }
-    sys.exit(exitCode)
   }
 
-  def runWithConfig[A](act: (Config, ActorSystem) => Future[A]): Int = {
-    pureconfig.loadConfig[Config] match {
-      case Left(errors) =>
-        System.err.println(show"Failed to read config: ${errors.toList.mkString(", ")}")
-        1
-      case Right(config) =>
+  private val argParser = new scopt.OptionParser[Arguments]("irritant") {
+    head("irritant", "0.1")
 
-        implicit val actorSystem: ActorSystem = ActorSystem("irritant")
-        try {
-          Await.result(act(config, actorSystem), 30.seconds)
-          ()
-        } finally {
-          Await.result(actorSystem.terminate(), 10.seconds)
-          ()
-        }
-        0
-    }
+    opt[File]('g', "git-path").required().valueName("<git-path>")
+      .action( (x, c) => c.copy(gitPath = x) )
+      .text("git-path is a required file property")
+      .validate(x =>
+        if (!new File(x, ".git").exists()) Left(show"${x.getAbsolutePath} must be a git directory")
+        else Right(()))
 
+    cmd("notify-deployed-tickets")
+      .action( (_, c) => c.copy(command = Some(NotifyDeployedTickets)) )
+      .text("Notify people in slack after deployment that their tickets are ready for testing")
   }
+
+  case class Arguments(
+    gitPath: File = new File("."),
+    command: Option[Command] = None
+  )
+
 
 }
 

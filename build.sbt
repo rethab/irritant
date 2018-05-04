@@ -4,14 +4,13 @@ version := "0.1"
 
 scalaVersion := "2.12.6"
 
-scalacOptions += "-Ypartial-unification"
-
 libraryDependencies ++= Seq(
 
   // CORE
     "org.typelevel"                     %% "cats-core"                           % "1.1.0"
   , "org.typelevel"                     %% "cats-effect"                         % "1.0.0-RC"
   , "com.github.pureconfig"             %% "pureconfig"                          % "0.9.1"
+  , "com.github.scopt"                  %% "scopt"                               % "3.7.0"
 
   // SYSTEMS
   , "com.atlassian.jira"                 % "jira-rest-java-client-core"          % "2.0.0-m31"

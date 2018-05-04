@@ -1,5 +1,6 @@
 package com.irritant.systems.jira
 
+import cats.effect.IO
 import com.atlassian.jira.rest.client.api.JiraRestClient
 import com.atlassian.jira.rest.client.api.domain.Issue
 import com.atlassian.jira.rest.client.internal.async.AsynchronousJiraRestClientFactory
@@ -11,36 +12,28 @@ import com.irritant.systems.jira.Jql.Predef._
 import org.codehaus.jettison.json.JSONObject
 
 import scala.collection.JavaConverters._
-import scala.concurrent.Future
 import scala.util.Try
 import scala.util.matching.Regex
 
-class Jira (config: JiraCfg) {
+class Jira (restClient: JiraRestClient) {
 
   import Jira._
 
-  private val restClient: JiraRestClient = {
-    val factory = new AsynchronousJiraRestClientFactory()
-    factory.createWithBasicHttpAuthentication(config.uri, config.username, config.password)
-  }
-
-  def close(): Unit =
-    restClient.close()
-
-  def inTestingWithoutInstructions(): Iterable[Issue] =
+  def inTestingWithoutInstructions(): IO[Iterable[Issue]] =
     restClient.getSearchClient
       .searchJql(currentlyInTesting().compile, null, null, AllFields)
       .claim()
       .getIssues.asScala.filterNot(containsTestInstructions)
+      .pure[IO]
 
-  def findTesters[R[_] : NonEmptyTraverse](users: Users, tickets: R[Ticket]): R[(Ticket, Option[User])] = {
+  def findTesters[R[_] : NonEmptyTraverse](users: Users, tickets: R[Ticket]): IO[R[(Ticket, Option[User])]] = {
     val issues = restClient.getSearchClient
       .searchJql(byKeys(tickets).compile)
       .claim()
       .getIssues
       .asScala
 
-    tickets.map(t => (t, issues.find(_.getKey === t.key).flatMap(extractTester(users))))
+    tickets.map(t => (t, issues.find(_.getKey === t.key).flatMap(extractTester(users)))).pure[IO]
   }
 
 }
@@ -72,9 +65,15 @@ object Jira {
     }
   }
 
-  def withJira[A](config: JiraCfg)(act: Jira => Future[A]): Future[A] = {
-    val jira = new Jira(config)
-    try act(jira) finally jira.close()
+  def withJira[A](config: JiraCfg)(act: Jira => IO[A]): IO[A] = {
+    IO {
+      val factory = new AsynchronousJiraRestClientFactory()
+      factory.createWithBasicHttpAuthentication(config.uri, config.username, config.password)
+    }.bracket { restClient =>
+      act(new Jira(restClient))
+    } { restClient =>
+      IO(restClient.close())
+    }
   }
 
   private def currentlyInTesting(): Expr =
