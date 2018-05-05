@@ -6,7 +6,7 @@ import akka.actor.ActorSystem
 import cats.effect.IO
 import cats.implicits._
 import com.irritant.Commands.{Command, Ctx}
-import com.irritant.Commands.Command.NotifyDeployedTickets
+import com.irritant.Commands.Command.{NotifyDeployedTickets, NotifyMissingTestInstructions}
 import com.irritant.systems.git.Git
 import com.irritant.systems.jira.Jira
 import com.irritant.systems.slack.Slack
@@ -15,7 +15,7 @@ object Main {
 
   /**
    * missing functionality:
-   *  - ticket links in slack should not link to api but real/user jira instance
+   *  - notify missing slack user in slack
    *  - fix Jira's IO impl (remove 'claim', correctly use IO)
    *  - find issues that are not in testing
    *  - pagination for jira issues
@@ -61,6 +61,10 @@ object Main {
     cmd("notify-deployed-tickets")
       .action( (_, c) => c.copy(command = Some(NotifyDeployedTickets)) )
       .text("Notify people in slack after deployment that their tickets are ready for testing")
+
+    cmd("notify-missing-test-instructions")
+      .action( (_, c) => c.copy(command = Some(NotifyMissingTestInstructions)) )
+      .text("Notify people in slack if their tickets are missing test instructions")
   }
 
   case class Arguments(

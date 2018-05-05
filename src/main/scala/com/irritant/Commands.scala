@@ -5,7 +5,7 @@ import cats.effect.IO
 import cats.implicits._
 import com.irritant.systems.git.Git
 import com.irritant.systems.jira.Jira
-import com.irritant.systems.jira.Jira.Ticket
+import com.irritant.systems.jira.Jira.Key
 import com.irritant.systems.slack.Slack
 
 object Commands {
@@ -30,17 +30,12 @@ object Commands {
           for  {
             range <- EitherT.right[String](ctx.git.guessRange().map(_.get))
 
-            tickets <- EitherT.fromOptionF(ctx.git.showDiff(range._1, range._2)
-              .map(_.flatMap(c => Ticket.fromCommitMessage(c.msg)).toList.toNel), "No tickets from commits")
+            issueKeys <- EitherT.fromOptionF(ctx.git.showDiff(range._1, range._2)
+              .map(_.flatMap(c => Key.fromCommitMessage(c.msg)).toList.toNel), "No tickets from commits")
 
-            ticketsWithTesters <- EitherT.right[String](ctx.jira.findTesters(ctx.users, tickets))
+            readyForTesting <- EitherT.right[String](ctx.jira.findTesters(issueKeys))
 
-            issuesForTesting <- EitherT.fromOption[IO](ticketsWithTesters
-              .collect { case (ticket, Some(tester)) => (ticket, tester)}
-              .groupByNel(_._2).mapValues(_.map(_._1))
-              .toList.toNel, "No issues for testing")
-
-            _ <- EitherT.right[String](ctx.slack.readyForTesting(issuesForTesting))
+            _ <- EitherT.right[String](ctx.slack.readyForTesting(readyForTesting))
           } yield ()
 
         prgm.value.flatMap {
@@ -48,6 +43,12 @@ object Commands {
           case Right(_) => IO.unit
         }
 
+      }
+    }
+
+    case object NotifyMissingTestInstructions extends Command {
+      override def runCommand(ctx: Ctx): IO[Unit] = {
+        ctx.jira.inTestingWithoutInstructions().flatMap(ctx.slack.nag).map(_ => ())
       }
     }
 

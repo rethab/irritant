@@ -16,7 +16,28 @@ case class Config (
   users: Seq[User]
 )
 
-case class JiraCfg(uri: URI, username: String, password: String)
+/**
+ * @param uri base uri of the project, eg. https://my-project.atlassian.net
+ * @param username to be used in api requests
+ * @param password to be used in api requests
+ */
+case class JiraCfg(
+  uri: URI,
+  username: String,
+  password: String
+) {
+
+  /**
+   * Creates a link the user can click on to
+   * open the ticket. This is needed, because
+   * the api always returns issue links that
+   * point to the api rather than the user-facing
+   * instance.
+   * @param key key of the issue, eg. MTP-3
+   */
+  def issueUrl(key: String): URI =
+    new URI(show"${uri.toString}/browse/$key")
+}
 
 case class SlackCfg(
   token: String,
