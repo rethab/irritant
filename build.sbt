@@ -13,7 +13,7 @@ libraryDependencies ++= Seq(
   , "com.github.scopt"                  %% "scopt"                               % "3.7.0"
 
   // SYSTEMS
-  , "com.atlassian.jira"                 % "jira-rest-java-client-core"          % "2.0.0-m31"
+  , "com.atlassian.jira"                 % "jira-rest-java-client-core"          % "5.0.4"
   , "com.github.gilbertw1"              %% "slack-scala-client"                  % "0.2.3"
   , "org.eclipse.jgit"                   % "org.eclipse.jgit"                    % "4.11.0.201803080745-r"
 
