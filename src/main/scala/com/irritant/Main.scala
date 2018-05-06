@@ -60,11 +60,14 @@ object Main {
 
     cmd("notify-deployed-tickets")
       .action( (_, c) => c.copy(command = Some(NotifyDeployedTickets)) )
-      .text("Notify people in slack after deployment that their tickets are ready for testing")
+      .text("\tNotify people in slack after deployment that their tickets are ready for testing")
 
     cmd("notify-missing-test-instructions")
       .action( (_, c) => c.copy(command = Some(NotifyMissingTestInstructions)) )
-      .text("Notify people in slack if their tickets are missing test instructions")
+      .text("\tNotify people in slack if their tickets are missing test instructions")
+
+    checkConfig(args =>
+      Either.cond(args.command.nonEmpty, (), "Command missing."))
   }
 
   case class Arguments(
