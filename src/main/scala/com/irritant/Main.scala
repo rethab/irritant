@@ -15,8 +15,9 @@ object Main {
 
   /**
    * missing functionality:
+   *  - not crash :)
+   *  - santity check when searching version in git commit log: how old is comit
    *  - notify missing slack user in slack
-   *  - fix Jira's IO impl (remove 'claim', correctly use IO)
    *  - find issues that are not in testing
    *  - pagination for jira issues
    *  - dynamically determine sprint --> use 'sprint IN openSprints()' jira has no good api for this
