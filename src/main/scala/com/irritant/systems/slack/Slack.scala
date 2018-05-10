@@ -1,30 +1,24 @@
 package com.irritant.systems.slack
 
-import akka.Done
-import akka.actor.ActorSystem
 import cats.NonEmptyTraverse
 import cats.data.{NonEmptyList, NonEmptySet}
 import cats.effect.IO
+import com.flyberrycapital.slack.SlackClient
 import com.irritant.{SlackCfg, User, Users}
 import com.irritant.systems.jira.Jira.Implicits._
-import slack.api.SlackApiClient
 import cats.implicits._
 import com.irritant.systems.jira.Jira.{Issue, JiraUser}
 
-import scala.util.control.NonFatal
+import scala.concurrent.duration._
 
-class Slack(config: SlackCfg, users: Users)(implicit actorSystem: ActorSystem) {
+class Slack(config: SlackCfg, users: Users) {
 
   import Slack._
 
-  private val api = SlackApiClient(config.token)
+  private val api = new SlackClient(config.token)
+  api.connTimeout(10.seconds.toMillis.toInt)
 
-  def ping: IO[Either[Error, SlackTeam]] =
-    IO.fromFuture(IO(api.testAuth()))
-      .map(_.team.asRight[Error].map(SlackTeam.apply))
-      .recover { case NonFatal(ex) => show"Failed to connect to slack: ${ex.getMessage}}".asLeft[SlackTeam] }
-
-  def nag(issues: Iterable[Issue]): IO[Done] = {
+  def nag(issues: Iterable[Issue]): IO[Unit] = {
 
     val allIssues = issues.toList.groupByNel(_.assignee)
 
@@ -43,22 +37,15 @@ class Slack(config: SlackCfg, users: Users)(implicit actorSystem: ActorSystem) {
 
     mappedUsers
       .toList
-      .map {
-        case (user, is) =>
-          IO.fromFuture(IO(api
-            .postChatMessage(
-              channelId = user.slack.userId,
-              text = missingTestInstructions(user, is),
-              username = Some("Jira Issue Nagger"))))
-            .flatMap { s =>
-              IO(println(show"Notified ${user.prettyName} about ${is.size} issues w/o testing instructions"))
-                .map(_ => s)
-            } }
-      .sequence[IO, String]
-      .map(_ => Done)
+      .map { case (user, is) =>
+        sendSlackMsg(user, missingTestInstructions(user, is)).flatMap { _ =>
+          IO(println(show"Notified ${user.prettyName} about ${is.size} issues w/o testing instructions"))
+        }}
+      .sequence[IO, Unit]
+      .map(_ => ())
   }
 
-  def readyForTesting(forTesting: NonEmptyList[Issue]): IO[Done] = {
+  def readyForTesting(forTesting: NonEmptyList[Issue]): IO[Unit] = {
 
     /* notify tester if tester is set
      * notify assignee if assignee is set
@@ -67,9 +54,14 @@ class Slack(config: SlackCfg, users: Users)(implicit actorSystem: ActorSystem) {
     val (woTester, wTester) = forTesting.toList.partitionEither(i => i.tester.map(t => (i, t)).toRight(i))
     val (unassigned, assigned) = woTester.partitionEither(i => i.assignee.map(a => (i, a)).toRight(i))
 
-    val aIO = wTester.groupByNel(_._2).map(i => (i._1, i._2.map(_._1))).toList.traverse[IO, Either[MissingSlackUser, String]] { case (user, issues) => notifyJiraUser(user, u => readyForTestingMsg(u, issues)) }
-    val bIO = assigned.groupByNel(_._2).map(i => (i._1, i._2.map(_._1))).toList.traverse[IO, Either[MissingSlackUser, String]] { case (user, issues) => notifyJiraUser(user, u => missingTesterMsg(u, issues)) }
-    val cIO = unassigned.groupByNel(_.reporter.get).toList.traverse[IO, Either[MissingSlackUser, String]] { case (user, issues) => notifyJiraUser(user, u => missingAssingeeAndTesterMsg(u, issues)) }
+    val aIO = wTester.groupByNel(_._2).map(i => (i._1, i._2.map(_._1))).toList.traverse[IO, Either[MissingSlackUser, Unit]] {
+      case (user, issues) => notifyJiraUser(user, u => readyForTestingMsg(u, issues)) }
+
+    val bIO = assigned.groupByNel(_._2).map(i => (i._1, i._2.map(_._1))).toList.traverse[IO, Either[MissingSlackUser, Unit]] {
+      case (user, issues) => notifyJiraUser(user, u => missingTesterMsg(u, issues)) }
+
+    val cIO = unassigned.groupByNel(_.reporter.get).toList.traverse[IO, Either[MissingSlackUser, Unit]] {
+      case (user, issues) => notifyJiraUser(user, u => missingAssingeeAndTesterMsg(u, issues)) }
 
     for {
       a <- aIO
@@ -78,30 +70,27 @@ class Slack(config: SlackCfg, users: Users)(implicit actorSystem: ActorSystem) {
       msus: Seq[MissingSlackUser] = a.collect { case Left(msu) => msu } ++ b.collect { case Left(msu) => msu } ++ c.collect { case Left(msu) => msu }
       _ <- NonEmptySet.fromSet[MissingSlackUser](scala.collection.immutable.SortedSet(msus: _*)) match {
         case Some(nesMus) => notifyMissingSlackUser(nesMus)
-        case None => Done.pure[IO]
+        case None => IO.unit
       }
-    } yield {
-      Done
-    }
+    } yield ()
   }
 
-  private def notifyMissingSlackUser(msu: NonEmptySet[MissingSlackUser]): IO[Done] = {
-    IO(println(show"Missing mappings: ${msu.map(_.user.username).intercalate(", ")}")) *> IO.pure(Done)
+  private def notifyMissingSlackUser(msu: NonEmptySet[MissingSlackUser]): IO[Unit] = {
+    IO(println(show"Missing mappings: ${msu.map(_.user.username).intercalate(", ")}")) *> IO.unit
   }
 
-  private def notifyJiraUser(jiraUser: JiraUser, text: User => String): IO[Either[MissingSlackUser, String]] = {
+  private def notifyJiraUser(jiraUser: JiraUser, text: User => String): IO[Either[MissingSlackUser, Unit]] =
     users.findByJira(jiraUser) match {
-      case None => MissingSlackUser(jiraUser).asLeft[String].pure[IO]
+      case None => MissingSlackUser(jiraUser).asLeft[Unit].pure[IO]
       case Some(user) =>
-        IO.fromFuture(IO(
-          api.postChatMessage(
-            channelId = user.slack.userId,
-            text = text(user),
-            username = Some("Irritant"))
-        )).map(_.asRight[MissingSlackUser])
+        sendSlackMsg(user, text(user))
+          .flatMap(res => IO(println(show"Notified ${user.prettyName} in slack")).map(_ => res))
+          .map(_.asRight[MissingSlackUser])
     }
 
-  }
+  private def sendSlackMsg(user: User, msg: String): IO[Unit] =
+    IO(api.chat.postMessage(user.slack.userId, msg, Map("as_user" -> "false", "username" -> "Irritant")))
+      .map(_ => ()) // throws exceptions for all non-200
 
 }
 

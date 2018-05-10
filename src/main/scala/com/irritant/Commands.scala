@@ -33,6 +33,8 @@ object Commands {
             issueKeys <- EitherT.fromOptionF(ctx.git.showDiff(range._1, range._2)
               .map(_.flatMap(c => Key.fromCommitMessage(c.msg)).toList.toNel), "No tickets from commits")
 
+            _ <- EitherT.right[String](IO(println(show"${issueKeys.size} ready for testing")))
+
             readyForTesting <- EitherT.right[String](ctx.jira.findTesters(issueKeys))
 
             _ <- EitherT.right[String](ctx.slack.readyForTesting(readyForTesting))

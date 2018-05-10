@@ -2,8 +2,6 @@ package com.irritant
 
 import java.io.File
 
-import akka.actor.ActorSystem
-import cats.effect.IO
 import cats.implicits._
 import com.irritant.Commands.{Command, Ctx}
 import com.irritant.Commands.Command.{NotifyDeployedTickets, NotifyMissingTestInstructions}
@@ -32,19 +30,14 @@ object Main {
             System.err.println(show"Failed to read config: ${errors.toList.mkString(", ")}")
             sys.exit(1)
           case Right(config) =>
-            IO(ActorSystem("irritant"))
-              .bracket { actorSystem =>
-                Git.withGit(GitConfig(arguments.gitPath)) { git =>
-                  Jira.withJira(config.jira) { jira =>
-                    val users = Users(config.users)
-                    val slack = new Slack(config.slack, users)(actorSystem)
-                    val ctx = Ctx(users, git, slack, jira)
-                    arguments.command.get.runCommand(ctx)
-                  }
-                }
-              } { actorSystem =>
-                IO.fromFuture(IO(actorSystem.terminate())) *> IO.unit
-              }.unsafeRunSync()
+            Git.withGit(GitConfig(arguments.gitPath)) { git =>
+              Jira.withJira(config.jira) { jira =>
+                val users = Users(config.users)
+                val slack = new Slack(config.slack, users)
+                val ctx = Ctx(users, git, slack, jira)
+                arguments.command.get.runCommand(ctx)
+              }
+            }.unsafeRunSync()
         }
     }
   }

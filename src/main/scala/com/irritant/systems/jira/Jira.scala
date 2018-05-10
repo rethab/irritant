@@ -1,11 +1,11 @@
 package com.irritant.systems.jira
 
 import java.net.URI
+import java.util.concurrent.{CompletableFuture, ExecutionException}
 
 import cats.effect.IO
 import com.atlassian.jira.rest.client.api.JiraRestClient
-import com.atlassian.jira.rest.client.api.domain.{User => JUser}
-import com.atlassian.jira.rest.client.api.domain.{Issue => JiraIssue}
+import com.atlassian.jira.rest.client.api.domain.{SearchResult, Issue => JiraIssue, User => JUser}
 import com.atlassian.jira.rest.client.internal.async.AsynchronousJiraRestClientFactory
 import com.irritant.JiraCfg
 import cats.{Eq, NonEmptyTraverse, Order, Show}
@@ -15,6 +15,7 @@ import com.irritant.systems.jira.Jql.Predef._
 import org.codehaus.jettison.json.JSONObject
 
 import scala.collection.JavaConverters._
+import scala.compat.java8.FutureConverters._
 import scala.util.Try
 import scala.util.matching.Regex
 
@@ -23,29 +24,28 @@ class Jira (cfg: JiraCfg, restClient: JiraRestClient) {
   import Jira._
 
   def inTestingWithoutInstructions(): IO[Iterable[Issue]] =
-    restClient.getSearchClient
-      .searchJql(currentlyInTesting().compile, null, null, AllFields)
-      .claim()
-      .getIssues.asScala.filterNot(containsTestInstructions)
-      .map(Issue.fromJiraIssue(cfg))
-      .pure[IO]
+    searchJql(currentlyInTesting())
+      .map(_
+        .getIssues.asScala.filterNot(containsTestInstructions)
+        .map(Issue.fromJiraIssue(cfg))
+      )
 
   def findTesters[R[_] : NonEmptyTraverse](tickets: R[Key]): IO[R[Issue]] = {
-    val issues = restClient.getSearchClient
-      .searchJql(byKeys(tickets).compile)
-      .claim()
-      .getIssues
-      .asScala
+    val ioIssues = searchJql(byKeys(tickets)).map(_.getIssues.asScala)
 
     // todo: what to do with tickets that were not found? eg. could be misspelled commit message
-    def attachTester(key: Key): Issue =
+    def attachTester(issues: Iterable[JiraIssue])(key: Key): Issue =
       issues
         .find(_.getKey === key.key)
         .fold(Issue.mkEmpty(cfg, key))(Issue.fromJiraIssue(cfg))
 
-    tickets.map(attachTester).pure[IO]
+    ioIssues.map(issues => tickets.map(attachTester(issues)))
   }
 
+  private def searchJql(expr: Expr): IO[SearchResult] =
+    IO.fromFuture(IO(
+      makeCompletableFuture(restClient.getSearchClient.searchJql(expr.compile, null, null, AllFields)).toScala
+    ))
 }
 
 object Jira {
@@ -130,4 +130,15 @@ object Jira {
   private def containsTestInstructions(i: JiraIssue): Boolean =
     i.getComments.asScala.exists(_.getBody.contains("Test Instructions"))
 
+
+  private def makeCompletableFuture[A](future: java.util.concurrent.Future[A]): CompletableFuture[A] = {
+    CompletableFuture.supplyAsync(() => {
+      try {
+        future.get()
+      } catch {
+        case e: InterruptedException => throw new RuntimeException(e);
+        case e: ExecutionException => throw new RuntimeException(e);
+      }
+    })
+  }
 }
