@@ -13,7 +13,7 @@ object Main {
 
   /**
    * missing functionality:
-   *  - not crash :)
+   *  - dry run option to print on stdline instead of slack
    *  - santity check when searching version in git commit log: how old is comit
    *  - notify missing slack user in slack
    *  - find issues that are not in testing
