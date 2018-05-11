@@ -50,7 +50,7 @@ object Commands {
 
     case object NotifyMissingTestInstructions extends Command {
       override def runCommand(ctx: Ctx): IO[Unit] = {
-        ctx.jira.inTestingWithoutInstructions().flatMap(ctx.slack.nag).map(_ => ())
+        ctx.jira.inTestingWithoutInstructions().flatMap(ctx.slack.testIssuesWithoutInstructions).map(_ => ())
       }
     }
 

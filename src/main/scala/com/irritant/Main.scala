@@ -13,7 +13,7 @@ object Main {
 
   /**
    * missing functionality:
-   *  - dry run option to print on stdline instead of slack
+   *  - write readme
    *  - santity check when searching version in git commit log: how old is comit
    *  - notify missing slack user in slack
    *  - find issues that are not in testing
@@ -33,7 +33,7 @@ object Main {
             Git.withGit(GitConfig(arguments.gitPath)) { git =>
               Jira.withJira(config.jira) { jira =>
                 val users = Users(config.users)
-                val slack = new Slack(config.slack, users)
+                val slack = new Slack(config.slack, users, arguments.dryRun)
                 val ctx = Ctx(users, git, slack, jira)
                 arguments.command.get.runCommand(ctx)
               }
@@ -52,6 +52,10 @@ object Main {
         if (!new File(x, ".git").exists()) Left(show"${x.getAbsolutePath} must be a git directory")
         else Right(()))
 
+    opt[Unit]("dry-run")
+      .action( (x, c) => c.copy(dryRun =  true))
+      .text("only write to stdout, don't send slack notifications")
+
     cmd("notify-deployed-tickets")
       .action( (_, c) => c.copy(command = Some(NotifyDeployedTickets)) )
       .text("\tNotify people in slack after deployment that their tickets are ready for testing")
@@ -66,7 +70,8 @@ object Main {
 
   case class Arguments(
     gitPath: File = new File("."),
-    command: Option[Command] = None
+    command: Option[Command] = None,
+    dryRun: Boolean = false
   )
 
 

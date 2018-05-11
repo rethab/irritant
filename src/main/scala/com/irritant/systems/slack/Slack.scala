@@ -11,14 +11,14 @@ import com.irritant.systems.jira.Jira.{Issue, JiraUser}
 
 import scala.concurrent.duration._
 
-class Slack(config: SlackCfg, users: Users) {
+class Slack(config: SlackCfg, users: Users, dryRun: Boolean) {
 
   import Slack._
 
   private val api = new SlackClient(config.token)
   api.connTimeout(10.seconds.toMillis.toInt)
 
-  def nag(issues: Iterable[Issue]): IO[Unit] = {
+  def testIssuesWithoutInstructions(issues: Iterable[Issue]): IO[Unit] = {
 
     val allIssues = issues.toList.groupByNel(_.assignee)
 
@@ -89,8 +89,12 @@ class Slack(config: SlackCfg, users: Users) {
     }
 
   private def sendSlackMsg(user: User, msg: String): IO[Unit] =
-    IO(api.chat.postMessage(user.slack.userId, msg, Map("as_user" -> "false", "username" -> "Irritant")))
-      .map(_ => ()) // throws exceptions for all non-200
+    if (dryRun) {
+      IO(println(show"Dry: Slack message to user ${user.slack.userId} (${user.prettyName}: $msg"))
+    } else {
+      IO(api.chat.postMessage(user.slack.userId, msg, Map("as_user" -> "false", "username" -> "Irritant")))
+        .map(_ => ()) // throws exceptions for all non-200
+    }
 
 }
 
