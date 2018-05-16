@@ -5,6 +5,7 @@ import cats.data.{NonEmptyList, NonEmptySet}
 import cats.effect.IO
 import com.flyberrycapital.slack.SlackClient
 import com.irritant.{SlackCfg, User, Users}
+import com.irritant.Utils.putStrLn
 import com.irritant.systems.jira.Jira.Implicits._
 import cats.implicits._
 import com.irritant.systems.jira.Jira.{Issue, JiraUser}
@@ -28,18 +29,18 @@ class Slack(config: SlackCfg, users: Users, dryRun: Boolean) {
     val mappedUsers: Map[User, NonEmptyList[Issue]] = issuesByUser.collect { case (Right(user), is) => (user, is) }
 
     unassingedIssues.foreach { i =>
-      IO(println(show"Issue ${i.key} is in testing, but not assigned"))
+      putStrLn(show"Issue ${i.key} is in testing, but not assigned")
     }
 
     unmappedUsers.foreach { case (user, is) =>
-      IO(println(show"User ${user.username} is not mapped to slack and issues: ${is.toList.mkString(",")}"))
+      putStrLn(show"User ${user.username} is not mapped to slack and issues: ${is.toList.mkString(",")}")
     }
 
     mappedUsers
       .toList
       .map { case (user, is) =>
         sendSlackMsg(user, missingTestInstructions(user, is)).flatMap { _ =>
-          IO(println(show"Notified ${user.prettyName} about ${is.size} issues w/o testing instructions"))
+          putStrLn(show"Notified ${user.prettyName} about ${is.size} issues w/o testing instructions")
         }}
       .sequence[IO, Unit]
       .map(_ => ())
@@ -75,22 +76,21 @@ class Slack(config: SlackCfg, users: Users, dryRun: Boolean) {
     } yield ()
   }
 
-  private def notifyMissingSlackUser(msu: NonEmptySet[MissingSlackUser]): IO[Unit] = {
-    IO(println(show"Missing mappings: ${msu.map(_.user.username).intercalate(", ")}")) *> IO.unit
-  }
+  private def notifyMissingSlackUser(msu: NonEmptySet[MissingSlackUser]): IO[Unit] =
+    putStrLn(show"Missing mappings: ${msu.map(_.user.username).intercalate(", ")}")
 
   private def notifyJiraUser(jiraUser: JiraUser, text: User => String): IO[Either[MissingSlackUser, Unit]] =
     users.findByJira(jiraUser) match {
       case None => MissingSlackUser(jiraUser).asLeft[Unit].pure[IO]
       case Some(user) =>
         sendSlackMsg(user, text(user))
-          .flatMap(res => IO(println(show"Notified ${user.prettyName} in slack")).map(_ => res))
+          .flatMap(res => putStrLn(show"Notified ${user.prettyName} in slack").map(_ => res))
           .map(_.asRight[MissingSlackUser])
     }
 
   private def sendSlackMsg(user: User, msg: String): IO[Unit] =
     if (dryRun) {
-      IO(println(show"Dry: Slack message to user ${user.slack.userId} (${user.prettyName}: $msg"))
+      putStrLn(show"Dry: Slack message to user ${user.slack.userId} (${user.prettyName}: $msg")
     } else {
       IO(api.chat.postMessage(user.slack.userId, msg, Map("as_user" -> "false", "username" -> config.postAsUser)))
         .map(_ => ()) // throws exceptions for all non-200

@@ -4,6 +4,7 @@ import cats.data.EitherT
 import cats.effect.IO
 import cats.implicits._
 import com.irritant.Commands.Command.{NotifyDeployedTickets, NotifyMissingTestInstructions}
+import com.irritant.Utils._
 import com.irritant.systems.git.Git
 import com.irritant.systems.jira.Jira
 import com.irritant.systems.jira.Jira.Key
@@ -51,7 +52,7 @@ object Commands {
             issueKeys <- EitherT.fromOptionF(ctx.git.showDiff(range._1, range._2)
               .map(_.flatMap(c => Key.fromCommitMessage(c.msg)).toList.toNel), "No tickets from commits")
 
-            _ <- EitherT.right[String](IO(println(show"${issueKeys.size} ready for testing")))
+            _ <- EitherT.right[String](putStrLn(show"${issueKeys.size} ready for testing"))
 
             readyForTesting <- EitherT.right[String](ctx.jira.findTesters(issueKeys))
 
@@ -59,7 +60,7 @@ object Commands {
           } yield ()
 
         prgm.value.flatMap {
-          case Left(msg) => IO(println(msg))
+          case Left(msg) => putStrLn(msg)
           case Right(_) => IO.unit
         }
 
