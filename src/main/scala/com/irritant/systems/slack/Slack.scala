@@ -92,7 +92,7 @@ class Slack(config: SlackCfg, users: Users, dryRun: Boolean) {
     if (dryRun) {
       IO(println(show"Dry: Slack message to user ${user.slack.userId} (${user.prettyName}: $msg"))
     } else {
-      IO(api.chat.postMessage(user.slack.userId, msg, Map("as_user" -> "false", "username" -> "Irritant")))
+      IO(api.chat.postMessage(user.slack.userId, msg, Map("as_user" -> "false", "username" -> config.postAsUser)))
         .map(_ => ()) // throws exceptions for all non-200
     }
 

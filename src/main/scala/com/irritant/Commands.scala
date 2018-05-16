@@ -3,6 +3,7 @@ package com.irritant
 import cats.data.EitherT
 import cats.effect.IO
 import cats.implicits._
+import com.irritant.Commands.Command.{NotifyDeployedTickets, NotifyMissingTestInstructions}
 import com.irritant.systems.git.Git
 import com.irritant.systems.jira.Jira
 import com.irritant.systems.jira.Jira.Key
@@ -17,13 +18,30 @@ object Commands {
     jira: Jira
   )
 
+  val allCommands: Seq[Command] = Seq(
+      NotifyDeployedTickets
+    , NotifyMissingTestInstructions
+  )
+
   sealed trait Command {
+
+    /** command to be used on the command line (should be dash-separated) */
+    def cmd: String
+
+    /** user-friendly description of what this command does */
+    def infoText: String
+
+    /** command implementation */
     def runCommand(ctx: Ctx): IO[Unit]
   }
 
   object Command {
 
     case object NotifyDeployedTickets extends Command {
+
+      val cmd = "notify-deployed-tickets"
+      val infoText = "Notify people in slack after deployment that their tickets are ready for testing"
+
       override def runCommand(ctx: Ctx): IO[Unit] = {
 
         val prgm: EitherT[IO, String, Unit] =
@@ -49,6 +67,10 @@ object Commands {
     }
 
     case object NotifyMissingTestInstructions extends Command {
+
+      val cmd = "notify-missing-test-instructions"
+      val infoText = "Notify people in slack if their tickets are missing test instructions"
+
       override def runCommand(ctx: Ctx): IO[Unit] = {
         ctx.jira.inTestingWithoutInstructions().flatMap(ctx.slack.testIssuesWithoutInstructions).map(_ => ())
       }

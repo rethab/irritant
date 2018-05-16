@@ -4,7 +4,6 @@ import java.io.File
 
 import cats.implicits._
 import com.irritant.Commands.{Command, Ctx}
-import com.irritant.Commands.Command.{NotifyDeployedTickets, NotifyMissingTestInstructions}
 import com.irritant.systems.git.Git
 import com.irritant.systems.jira.Jira
 import com.irritant.systems.slack.Slack
@@ -13,7 +12,6 @@ object Main {
 
   /**
    * missing functionality:
-   *  - write readme
    *  - santity check when searching version in git commit log: how old is comit
    *  - notify missing slack user in slack
    *  - find issues that are not in testing
@@ -45,24 +43,24 @@ object Main {
   private val argParser = new scopt.OptionParser[Arguments]("irritant") {
     head("irritant", "0.1")
 
+    help("help")
+
     opt[File]('g', "git-path").required().valueName("<git-path>")
       .action( (x, c) => c.copy(gitPath = x) )
-      .text("git-path is a required file property")
-      .validate(x =>
-        if (!new File(x, ".git").exists()) Left(show"${x.getAbsolutePath} must be a git directory")
+      .text("git-path should point to a git repository")
+      .validate(d =>
+        if (!new File(d, ".git").exists()) Left(show"${d.getAbsolutePath} must be a git directory")
         else Right(()))
 
     opt[Unit]("dry-run")
       .action( (x, c) => c.copy(dryRun =  true))
       .text("only write to stdout, don't send slack notifications")
 
-    cmd("notify-deployed-tickets")
-      .action( (_, c) => c.copy(command = Some(NotifyDeployedTickets)) )
-      .text("\tNotify people in slack after deployment that their tickets are ready for testing")
-
-    cmd("notify-missing-test-instructions")
-      .action( (_, c) => c.copy(command = Some(NotifyMissingTestInstructions)) )
-      .text("\tNotify people in slack if their tickets are missing test instructions")
+    Commands.allCommands.foreach { command =>
+      cmd(command.cmd)
+        .action((_, c) => c.copy(command = Some(command)))
+        .text("\t" + command.infoText)
+    }
 
     checkConfig(args =>
       Either.cond(args.command.nonEmpty, (), "Command missing."))
