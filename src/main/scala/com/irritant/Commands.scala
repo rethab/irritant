@@ -73,7 +73,7 @@ object Commands {
       val infoText = "Notify people in slack if their tickets are missing test instructions"
 
       override def runCommand(ctx: Ctx): IO[Unit] = {
-        ctx.jira.inTestingWithoutInstructions().flatMap(ctx.slack.testIssuesWithoutInstructions).map(_ => ())
+        ctx.jira.inTestingAndMissingInstructions().flatMap(ctx.slack.testIssuesWithoutInstructions).map(_ => ())
       }
     }
 

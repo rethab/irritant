@@ -23,10 +23,9 @@ class Jira (cfg: JiraCfg, restClient: JiraRestClient) {
 
   import Jira._
 
-  def inTestingWithoutInstructions(): IO[Iterable[Issue]] =
+  def inTestingAndMissingInstructions(): IO[Iterable[Issue]] =
     searchJql(currentlyInTesting())
-      .map(_
-        .getIssues.asScala.filterNot(containsTestInstructions)
+      .map(_.getIssues.asScala.filter(missingInstructions)
         .map(Issue.fromJiraIssue(cfg))
       )
 
@@ -64,7 +63,7 @@ object Jira {
 
   case class Issue (
     key: Key,
-    description: Option[String],
+    summary: Option[String], // the 'title' of the issue
     userLink: URI,
     reporter: Option[JiraUser],
     assignee: Option[JiraUser],
@@ -80,7 +79,7 @@ object Jira {
 
       Issue(
         key = Key(i.getKey),
-        description = Option(i.getDescription),
+        summary = Option(i.getSummary),
         userLink = cfg.issueUrl(i.getKey),
         reporter = fromNullableUser(i.getReporter),
         assignee = fromNullableUser(i.getAssignee),
@@ -91,7 +90,7 @@ object Jira {
     }
 
     private[jira] def mkEmpty(cfg: JiraCfg, key: Key): Issue =
-      Issue(key = key, description = None, userLink = cfg.issueUrl(key.key), reporter = None, assignee = None, tester = None)
+      Issue(key = key, summary = None, userLink = cfg.issueUrl(key.key), reporter = None, assignee = None, tester = None)
 
   }
 
@@ -127,8 +126,26 @@ object Jira {
   private def byKeys[R[_] : NonEmptyTraverse](tickets: R[Key]): Expr =
     InKeys(tickets.map(_.key))
 
+  /** Bugs with reproduction steps don't need test
+   * instructions, everything else does. */
+  def missingInstructions(i: JiraIssue): Boolean =
+    !containsTestInstructions(i) && !isBugWithSteps(i)
+
   private def containsTestInstructions(i: JiraIssue): Boolean =
-    i.getComments.asScala.exists(_.getBody.contains("Test Instructions"))
+    Set(
+        "Testing instructions"
+      , "testing instructions"
+      , "Testing Instructions"
+      , "Test Instructions"
+      , "Test instructions"
+    ).exists(title => i.getComments.asScala.exists(_.getBody.contains(title)))
+
+  private def isBugWithSteps(issue: JiraIssue): Boolean =
+    ( for {
+      issueType <- Option(issue.getIssueType).flatMap(it => Option(it.getName))
+      issueDescription <- Option(issue.getDescription)
+      } yield issueType == "Bug" && issueDescription.contains("Steps")
+    ).getOrElse(false)
 
 
   private def makeCompletableFuture[A](future: java.util.concurrent.Future[A]): CompletableFuture[A] = {

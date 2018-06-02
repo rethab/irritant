@@ -110,7 +110,7 @@ object Slack {
   private implicit val missingSlackUserOrdering: Ordering[MissingSlackUser] = Ordering.by(_.user)
 
   private def missingTestInstructions[R[_]: NonEmptyTraverse](user: User, is: R[Issue]): String = {
-    def issueTitle(i: Issue): String = i.description.getOrElse(i.key.show)
+    def issueTitle(i: Issue): String = i.summary.getOrElse(i.key.show)
     val issueList: String = is
       .map(i => show" - ${issueTitle(i)} : ${i.userLink.toString}")
       .intercalate("\n")

@@ -12,7 +12,10 @@ This is intended for teams that use several tools and need them to work together
 For example, it can search jira tickets based on commits in git and notify the committers in slack about missing data, upon deployment etc.
 
 ## Configuration
-Configure access to Jira
+
+### Configure access to Jira:
+
+*Note that instead of your real password, you should use an API Token: [API Tokens](https://confluence.atlassian.com/cloud/api-tokens-938839638.html)*
 ```
 jira {
   uri =  "https://my-project.atlassian.net"
@@ -21,7 +24,10 @@ jira {
 }
 ```
 
-Configure access to Slack
+### Configure access to Slack:
+
+Create Legacy Token: [Legacy Tokens](https://api.slack.com/custom-integrations/legacy-tokens)
+
 ```
 slack {
   token = "LEGACY_TOKEN"
