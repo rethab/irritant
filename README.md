@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/rethab/irritant.svg?branch=master)](https://travis-ci.org/rethab/irritant)
+
 # Irritant
 
 A simple command line tool that connects tools for workflows. Currently supported:
