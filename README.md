@@ -69,7 +69,10 @@ See `com.irritant.Commands` as a starting point
 
 
 ## Options
-- `--dry-run`: Write to stdout instead of slack (for testing)
+- `--run-mode <run-mode>`: Where 'run-mode' is one of the following:
+  - safe (default): ask before triggering people in slack
+  - dry: write to stdout instead of slack
+  - yolo: don't ask before triggering
 - `--help`: Shows the help
 
 

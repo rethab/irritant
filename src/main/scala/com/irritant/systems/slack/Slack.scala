@@ -4,15 +4,16 @@ import cats.NonEmptyTraverse
 import cats.data.{NonEmptyList, NonEmptySet}
 import cats.effect.IO
 import com.flyberrycapital.slack.SlackClient
-import com.irritant.{SlackCfg, User, Users}
-import com.irritant.Utils.putStrLn
+import com.irritant._
+import com.irritant.Utils.{getLine, putStrLn}
 import com.irritant.systems.jira.Jira.Implicits._
 import cats.implicits._
+import com.irritant.RunMode.{Dry, Safe, Yolo}
 import com.irritant.systems.jira.Jira.{Issue, JiraUser}
 
 import scala.concurrent.duration._
 
-class Slack(config: SlackCfg, users: Users, dryRun: Boolean) {
+class Slack(config: SlackCfg, users: Users, runMode: RunMode) {
 
   import Slack._
 
@@ -39,9 +40,11 @@ class Slack(config: SlackCfg, users: Users, dryRun: Boolean) {
     mappedUsers
       .toList
       .map { case (user, is) =>
-        sendSlackMsg(user, missingTestInstructions(user, is)).flatMap { _ =>
-          putStrLn(show"Notified ${user.prettyName} about ${is.size} issues w/o testing instructions")
-        }}
+        sendSlackMsg(
+          user = user,
+          slackMessage = missingTestInstructions(user, is),
+          messageInfo = show"${is.size} issues w/o testing instructions")
+      }
       .sequence[IO, Unit]
       .map(_ => ())
   }
@@ -56,13 +59,13 @@ class Slack(config: SlackCfg, users: Users, dryRun: Boolean) {
     val (unassigned, assigned) = woTester.partitionEither(i => i.assignee.map(a => (i, a)).toRight(i))
 
     val aIO = wTester.groupByNel(_._2).map(i => (i._1, i._2.map(_._1))).toList.traverse[IO, Either[MissingSlackUser, Unit]] {
-      case (user, issues) => notifyJiraUser(user, u => readyForTestingMsg(u, issues)) }
+      case (user, issues) => notifyJiraUser(user, u => readyForTestingMsg(u, issues), messageInfo = show"${issues.size} tickets ready for testing") }
 
     val bIO = assigned.groupByNel(_._2).map(i => (i._1, i._2.map(_._1))).toList.traverse[IO, Either[MissingSlackUser, Unit]] {
-      case (user, issues) => notifyJiraUser(user, u => missingTesterMsg(u, issues)) }
+      case (user, issues) => notifyJiraUser(user, u => missingTesterMsg(u, issues), messageInfo = show"${issues.size} ticket missing tester") }
 
     val cIO = unassigned.groupByNel(_.reporter.get).toList.traverse[IO, Either[MissingSlackUser, Unit]] {
-      case (user, issues) => notifyJiraUser(user, u => missingAssingeeAndTesterMsg(u, issues)) }
+      case (user, issues) => notifyJiraUser(user, u => missingAssingeeAndTesterMsg(u, issues), messageInfo = show"${issues.size} tickets missing assingnee and tester") }
 
     for {
       a <- aIO
@@ -79,22 +82,36 @@ class Slack(config: SlackCfg, users: Users, dryRun: Boolean) {
   private def notifyMissingSlackUser(msu: NonEmptySet[MissingSlackUser]): IO[Unit] =
     putStrLn(show"Missing mappings: ${msu.map(_.user.username).intercalate(", ")}")
 
-  private def notifyJiraUser(jiraUser: JiraUser, text: User => String): IO[Either[MissingSlackUser, Unit]] =
+  private def notifyJiraUser(jiraUser: JiraUser, text: User => String, messageInfo: String): IO[Either[MissingSlackUser, Unit]] =
     users.findByJira(jiraUser) match {
       case None => MissingSlackUser(jiraUser).asLeft[Unit].pure[IO]
       case Some(user) =>
-        sendSlackMsg(user, text(user))
-          .flatMap(res => putStrLn(show"Notified ${user.prettyName} in slack").map(_ => res))
-          .map(_.asRight[MissingSlackUser])
+        sendSlackMsg(
+          user = user,
+          slackMessage = text(user),
+          messageInfo = messageInfo)
+        .map(_.asRight[MissingSlackUser])
     }
 
-  private def sendSlackMsg(user: User, msg: String): IO[Unit] =
-    if (dryRun) {
-      putStrLn(show"Dry: Slack message to user ${user.slack.userId} (${user.prettyName}: $msg")
-    } else {
-      IO(api.chat.postMessage(user.slack.userId, msg, Map("as_user" -> "false", "username" -> config.postAsUser)))
-        .map(_ => ()) // throws exceptions for all non-200
+  private def sendSlackMsg(user: User, slackMessage: String, messageInfo: String): IO[Unit] = {
+
+    def doSend(): IO[Unit] =
+      IO(api.chat.postMessage(user.slack.userId, slackMessage, Map("as_user" -> "false", "username" -> config.postAsUser)))
+        .flatMap(_ => // throws exceptions for all non-200
+          putStrLn(show"Sent message to ${user.prettyName} about $messageInfo"))
+
+    runMode match {
+      case Dry =>
+        putStrLn(show"Dry: Slack message to user ${user.slack.userId} (${user.prettyName}: $slackMessage")
+      case Safe =>
+        (putStrLn(show"Send Slack Notification to ${user.prettyName} about $messageInfo? [y/n]") *> getLine).flatMap { answer =>
+          if (answer.trim == "y" || answer.trim == "Y") doSend()
+          else putStrLn(show"Not sending message to ${user.prettyName} about $messageInfo")
+        }
+      case Yolo =>
+        doSend()
     }
+  }
 
 }
 

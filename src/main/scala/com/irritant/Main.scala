@@ -2,11 +2,15 @@ package com.irritant
 
 import java.io.File
 
+import cats.effect.IO
 import cats.implicits._
 import com.irritant.Commands.{Command, Ctx}
+import com.irritant.RunMode.Safe
 import com.irritant.systems.git.Git
 import com.irritant.systems.jira.Jira
 import com.irritant.systems.slack.Slack
+import com.irritant.Utils.putStrLn
+import scopt.Read
 
 object Main {
 
@@ -31,14 +35,30 @@ object Main {
             Git.withGit(GitConfig(arguments.gitPath)) { git =>
               Jira.withJira(config.jira) { jira =>
                 val users = Users(config.users)
-                val slack = new Slack(config.slack, users, arguments.dryRun)
+                val slack = new Slack(config.slack, users, arguments.runMode)
                 val ctx = Ctx(users, git, slack, jira)
-                arguments.command.get.runCommand(ctx)
+                runModeInfo(arguments.runMode) *> arguments.command.get.runCommand(ctx)
               }
             }.unsafeRunSync()
         }
     }
   }
+
+  private def runModeInfo(runMode: RunMode): IO[Unit] =
+    runMode match {
+      case RunMode.Dry => putStrLn("Running in Dry Mode, won't send notifications")
+      case RunMode.Safe => putStrLn("Running in Safe Mode, will ask before sending notifications")
+      case RunMode.Yolo => putStrLn("Running in Yolo Mode, will send notifications without asking")
+    }
+
+  private implicit val runModeRead: Read[RunMode] =
+    Read.reads {
+      case "dry" => RunMode.Dry
+      case "safe" => RunMode.Safe
+      case "yolo" => RunMode.Yolo
+      case unknown => throw new IllegalArgumentException(show"$unknown is not a RunMode")
+    }
+
 
   private val argParser = new scopt.OptionParser[Arguments]("irritant") {
     head("irritant", "0.1")
@@ -52,9 +72,9 @@ object Main {
         if (!new File(d, ".git").exists()) Left(show"${d.getAbsolutePath} must be a git directory")
         else Right(()))
 
-    opt[Unit]("dry-run")
-      .action( (x, c) => c.copy(dryRun =  true))
-      .text("only write to stdout, don't send slack notifications")
+    opt[RunMode]('m', "run-mode").valueName("<run-mode>")
+      .action( (x, c) => c.copy(runMode = x) )
+      .text("run-mode can be one of: 'safe' (ask before notifying, default), 'dry' (don't trigger notifications), 'yolo' (don't ask before triggering)")
 
     Commands.allCommands.foreach { command =>
       cmd(command.cmd)
@@ -69,7 +89,7 @@ object Main {
   case class Arguments(
     gitPath: File = new File("."),
     command: Option[Command] = None,
-    dryRun: Boolean = false
+    runMode: RunMode = Safe
   )
 
 
