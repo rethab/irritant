@@ -35,6 +35,7 @@ slack {
 }
 ```
 
+### User Mappings
 This list of users maps the users in different systems.
 Note that each user that is used somewhere (eg. should be triggered, has
 created a ticket, is tester of a ticket) must be mapped here in order for the
