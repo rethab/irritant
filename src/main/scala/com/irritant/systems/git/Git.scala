@@ -1,9 +1,11 @@
 package com.irritant.systems.git
 
 import cats.effect.IO
+import cats.kernel.Eq
+import cats.implicits._
 import com.irritant.GitConfig
 import org.eclipse.jgit.api.{Git => JGit}
-import org.eclipse.jgit.lib.ObjectId
+import org.eclipse.jgit.revwalk.RevCommit
 
 import scala.collection.JavaConverters._
 
@@ -24,17 +26,7 @@ class Git(git: JGit) {
     for {
       masterRef <- IO(git.getRepository.exactRef(MasterRef))
       commits <- IO(git.log().add(masterRef.getObjectId).setMaxCount(100).call().asScala)
-    } yield {
-
-      val versions = commits
-        .flatMap(c => Version.fromCommitMessage(c.getShortMessage).map(v => (v, c)))
-        .take(2).toSeq
-
-      versions match {
-        case latestTag +: prevTag +: _ => Some((latestTag, prevTag))
-        case _ => None
-      }
-    }
+    } yield extractVersions(commits)
   }
 
   def showDiff(start: VersionWithId, end: VersionWithId): IO[Seq[Commit]] = {
@@ -49,7 +41,10 @@ object Git {
 
   private val MasterRef = "refs/heads/master"
 
-  type VersionWithId = (Version, ObjectId)
+  type VersionWithId = (Version, RevCommit)
+
+  implicit val revCommitEq: Eq[RevCommit] =
+    Eq.instance((c1, c2) => c1.equals(c2))
 
   case class Version private(major: Int, minor: Int, patch: Int)
 
@@ -64,6 +59,22 @@ object Git {
     }
 
   }
+
+  private[git] def extractVersions(commits: Iterable[RevCommit]): Option[(VersionWithId, VersionWithId)] = {
+
+    def toVersionWithId(c: RevCommit): Option[VersionWithId] =
+      Version.fromCommitMessage(c.getShortMessage).map(v => (v, c))
+
+    for {
+      newVersion <- commits
+        .take(3) // since it was just deployed, the commit should be very new
+        .flatMap(toVersionWithId).headOption
+      previousVersion <- commits
+        .dropWhile(_ =!= newVersion._2).drop(1) // drop all up to (inclusive) new version
+        .flatMap(toVersionWithId).headOption
+    } yield (newVersion, previousVersion)
+  }
+
 
   case class Commit(msg: String) extends AnyVal
 

@@ -12,7 +12,7 @@ object Main {
 
   /**
    * missing functionality:
-   *  - santity check when searching version in git commit log: how old is comit
+   *  - santity check when searching version in git commit log: how old is comit --> how to create commits in test?
    *  - notify missing slack user in slack
    *  - find issues that are not in testing
    *  - pagination for jira issues
