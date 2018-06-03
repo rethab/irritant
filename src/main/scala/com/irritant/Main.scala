@@ -2,7 +2,7 @@ package com.irritant
 
 import java.io.File
 
-import cats.effect.IO
+import cats.effect.{ExitCode, IO, IOApp}
 import cats.implicits._
 import com.irritant.Commands.{Command, Ctx}
 import com.irritant.RunMode.Safe
@@ -12,7 +12,7 @@ import com.irritant.systems.slack.Slack
 import com.irritant.Utils.putStrLn
 import scopt.Read
 
-object Main {
+object Main extends IOApp {
 
   /**
    * missing functionality:
@@ -22,10 +22,10 @@ object Main {
    *  - pagination for jira issues
    *  - dynamically determine sprint --> use 'sprint IN openSprints()' jira has no good api for this
    */
-  def main(args: Array[String]): Unit = {
+  def run(args: List[String]): IO[ExitCode] = {
     argParser.parse(args, Arguments()) match {
       case None =>
-        sys.exit(1)
+        ExitCode.Error.pure[IO]
       case Some(arguments) =>
         pureconfig.loadConfig[Config] match {
           case Left(errors) =>
@@ -39,7 +39,7 @@ object Main {
                 val ctx = Ctx(users, git, slack, jira)
                 runModeInfo(arguments.runMode) *> arguments.command.get.runCommand(ctx)
               }
-            }.unsafeRunSync()
+            }
         }
     }
   }

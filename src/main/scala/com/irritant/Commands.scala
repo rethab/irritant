@@ -1,7 +1,7 @@
 package com.irritant
 
 import cats.data.EitherT
-import cats.effect.IO
+import cats.effect.{ExitCode, IO}
 import cats.implicits._
 import com.irritant.Commands.Command.{NotifyDeployedTickets, NotifyMissingTestInstructions}
 import com.irritant.Utils._
@@ -33,7 +33,7 @@ object Commands {
     def infoText: String
 
     /** command implementation */
-    def runCommand(ctx: Ctx): IO[Unit]
+    def runCommand(ctx: Ctx): IO[ExitCode]
   }
 
   object Command {
@@ -43,7 +43,7 @@ object Commands {
       val cmd = "notify-deployed-tickets"
       val infoText = "Notify people in slack after deployment that their tickets are ready for testing"
 
-      override def runCommand(ctx: Ctx): IO[Unit] = {
+      override def runCommand(ctx: Ctx): IO[ExitCode] = {
 
         val prgm: EitherT[IO, String, Unit] =
           for  {
@@ -60,8 +60,8 @@ object Commands {
           } yield ()
 
         prgm.value.flatMap {
-          case Left(msg) => putStrLn(msg)
-          case Right(_) => IO.unit
+          case Left(msg) => putStrLn(msg) *> ExitCode.Error.pure[IO]
+          case Right(_) => ExitCode.Success.pure[IO]
         }
 
       }
@@ -72,8 +72,10 @@ object Commands {
       val cmd = "notify-missing-test-instructions"
       val infoText = "Notify people in slack if their tickets are missing test instructions"
 
-      override def runCommand(ctx: Ctx): IO[Unit] = {
-        ctx.jira.inTestingAndMissingInstructions().flatMap(ctx.slack.testIssuesWithoutInstructions).map(_ => ())
+      override def runCommand(ctx: Ctx): IO[ExitCode] = {
+        ctx.jira.inTestingAndMissingInstructions()
+          .flatMap(ctx.slack.testIssuesWithoutInstructions)
+          .map(_ => ExitCode.Success)
       }
     }
 
