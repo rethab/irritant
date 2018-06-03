@@ -3,7 +3,7 @@ package com.irritant.systems.jira
 import java.net.URI
 import java.util.concurrent.{CompletableFuture, ExecutionException}
 
-import cats.effect.IO
+import cats.effect.{IO, Resource}
 import com.atlassian.jira.rest.client.api.JiraRestClient
 import com.atlassian.jira.rest.client.api.domain.{SearchResult, Issue => JiraIssue, User => JUser}
 import com.atlassian.jira.rest.client.internal.async.AsynchronousJiraRestClientFactory
@@ -45,6 +45,9 @@ class Jira (cfg: JiraCfg, restClient: JiraRestClient) {
     IO.fromFuture(IO(
       makeCompletableFuture(restClient.getSearchClient.searchJql(expr.compile, null, null, AllFields)).toScala
     ))
+
+  private def close(): IO[Unit] =
+    IO(restClient.close())
 }
 
 object Jira {
@@ -109,15 +112,13 @@ object Jira {
     }
   }
 
-  def withJira[A](config: JiraCfg)(act: Jira => IO[A]): IO[A] = {
-    IO {
+  def mkJira(config: JiraCfg): Resource[IO, Jira] = {
+    def acquire: IO[Jira]= {
       val factory = new AsynchronousJiraRestClientFactory()
-      factory.createWithBasicHttpAuthentication(config.uri, config.username, config.password)
-    }.bracket { restClient =>
-      act(new Jira(config, restClient))
-    } { restClient =>
-      IO(restClient.close())
+      IO(factory.createWithBasicHttpAuthentication(config.uri, config.username, config.password))
+        .map(client => new Jira(config, client))
     }
+    Resource.make(acquire)(jira => jira.close())
   }
 
   private def currentlyInTesting(): Expr =

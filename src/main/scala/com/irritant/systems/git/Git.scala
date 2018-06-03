@@ -1,6 +1,6 @@
 package com.irritant.systems.git
 
-import cats.effect.IO
+import cats.effect.{IO, Resource}
 import cats.kernel.Eq
 import cats.implicits._
 import com.irritant.GitConfig
@@ -34,6 +34,9 @@ class Git(git: JGit) {
     IO(callCommand.call())
       .map(_.asScala.drop(1).map(c => Commit(c.getShortMessage)).toSeq)
   }
+
+  private def close(): IO[Unit] =
+    IO(git.close())
 
 }
 
@@ -78,12 +81,7 @@ object Git {
 
   case class Commit(msg: String) extends AnyVal
 
-  def withGit[A](cfg: GitConfig)(act: Git => IO[A]): IO[A] = {
-    IO(JGit.open(cfg.repo))
-      .bracket
-        { git => act(new Git(git)) }
-        { git => IO(git.close()) }
-  }
-
+  def mkGit(cfg: GitConfig): Resource[IO, Git] =
+    Resource.make(IO(new Git(JGit.open(cfg.repo))))(_.close())
 
 }
