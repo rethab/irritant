@@ -26,7 +26,7 @@ class Git(git: JGit) {
     for {
       masterRef <- IO(git.getRepository.exactRef(MasterRef))
       commits <- IO(git.log().add(masterRef.getObjectId).setMaxCount(100).call().asScala)
-    } yield extractVersions(commits)
+    } yield extractVersions(commits.toList)
   }
 
   def showDiff(start: VersionWithId, end: VersionWithId): IO[Seq[Commit]] = {
@@ -63,8 +63,7 @@ object Git {
 
   }
 
-  private[git] def extractVersions(commits: Iterable[RevCommit]): Option[(VersionWithId, VersionWithId)] = {
-
+  private[git] def extractVersions(commits: List[RevCommit]): Option[(VersionWithId, VersionWithId)] = {
     def toVersionWithId(c: RevCommit): Option[VersionWithId] =
       Version.fromCommitMessage(c.getShortMessage).map(v => (v, c))
 

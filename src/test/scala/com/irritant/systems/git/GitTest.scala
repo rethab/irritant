@@ -20,7 +20,7 @@ class GitTest extends WordSpec with OptionValues with Inside with MustMatchers {
 
       "find range if new version is in recent commit" ignore {
         val range =
-          Git.extractVersions(Seq(
+          Git.extractVersions(List(
               mkCommit("release: version 120.0.2")
             , mkCommit("some other normal commit")
             , mkCommit("release: version 120.0.1")
@@ -34,7 +34,7 @@ class GitTest extends WordSpec with OptionValues with Inside with MustMatchers {
 
       "find range if new version is in second commit" ignore {
         val range =
-          Git.extractVersions(Seq(
+          Git.extractVersions(List(
               mkCommit("random commit after version")
             , mkCommit("release: version 120.0.2")
             , mkCommit("some other normal commit")
@@ -50,7 +50,7 @@ class GitTest extends WordSpec with OptionValues with Inside with MustMatchers {
       }
 
       "not range if new version is in old commit" ignore {
-        Git.extractVersions(Seq(
+        Git.extractVersions(List(
             mkCommit("some other normal commit")
           , mkCommit("some other normal commit")
           , mkCommit("some other normal commit")
