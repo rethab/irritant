@@ -47,7 +47,7 @@ object Commands {
 
         val prgm: EitherT[IO, String, Unit] =
           for  {
-            range <- EitherT.right[String](ctx.git.guessRange().map(_.get))
+            range <- EitherT.fromOptionF(ctx.git.guessRange(), "Could not find commit range")
 
             issueKeys <- EitherT.fromOptionF(ctx.git.showDiff(range._1, range._2)
               .map(_.flatMap(c => Key.fromCommitMessage(c.msg)).toList.toNel), "No tickets from commits")
