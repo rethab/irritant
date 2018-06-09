@@ -1,6 +1,6 @@
 package com.irritant.systems.git
 
-import cats.effect.{IO, Resource}
+import cats.effect.{Effect, Resource}
 import cats.kernel.Eq
 import cats.implicits._
 import com.irritant.GitConfig
@@ -12,7 +12,7 @@ import scala.collection.JavaConverters._
 /**
  * JGit Cookbook: https://github.com/centic9/jgit-cookbook
  */
-class Git(git: JGit) {
+class Git[F[_]](git: JGit)(implicit F: Effect[F]) {
 
   import Git._
 
@@ -22,21 +22,21 @@ class Git(git: JGit) {
    * most recently released version, which may be later used
    * to create a diff from.
    */
-  def guessRange(): IO[Option[(VersionWithId, VersionWithId)]] = {
+  def guessRange(): F[Option[(VersionWithId, VersionWithId)]] = {
     for {
-      masterRef <- IO(git.getRepository.exactRef(MasterRef))
-      commits <- IO(git.log().add(masterRef.getObjectId).setMaxCount(100).call().asScala)
+      masterRef <- F.delay(git.getRepository.exactRef(MasterRef))
+      commits <- F.delay(git.log().add(masterRef.getObjectId).setMaxCount(100).call().asScala)
     } yield extractVersions(commits.toList)
   }
 
-  def showDiff(start: VersionWithId, end: VersionWithId): IO[Seq[Commit]] = {
+  def showDiff(start: VersionWithId, end: VersionWithId): F[Seq[Commit]] = {
     val callCommand = git.log().addRange(end._2, start._2)
-    IO(callCommand.call())
+    F.delay(callCommand.call())
       .map(_.asScala.drop(1).map(c => Commit(c.getShortMessage)).toSeq)
   }
 
-  private def close(): IO[Unit] =
-    IO(git.close())
+  private def close(): F[Unit] =
+    F.delay(git.close())
 
 }
 
@@ -80,7 +80,7 @@ object Git {
 
   case class Commit(msg: String) extends AnyVal
 
-  def mkGit(cfg: GitConfig): Resource[IO, Git] =
-    Resource.make(IO(new Git(JGit.open(cfg.repo))))(_.close())
+  def mkGit[F[_]](cfg: GitConfig)(implicit F: Effect[F]): Resource[F, Git[F]] =
+    Resource.make(F.delay(new Git[F](JGit.open(cfg.repo))))(_.close())
 
 }

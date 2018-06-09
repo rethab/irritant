@@ -2,7 +2,7 @@ package com.irritant
 
 import java.io.File
 
-import cats.effect.{ExitCode, IO, IOApp, Resource}
+import cats.effect._
 import cats.implicits._
 import com.irritant.Commands.{Command, Ctx}
 import com.irritant.RunMode.Safe
@@ -32,23 +32,26 @@ object Main extends IOApp {
             System.err.println(show"Failed to read config: ${errors.toList.mkString(", ")}")
             sys.exit(1)
           case Right(config) =>
-
-            val systems: Resource[IO, (Jira, Git)] = for {
-              jira <- Jira.mkJira(config.jira)
-              git <- Git.mkGit(GitConfig(arguments.gitPath))
-            } yield (jira, git)
-
-            systems.use { case (jira, git) =>
-              val users = Users(config.users)
-              val slack = new Slack(config.slack, users, arguments.runMode)
-              val ctx = Ctx(users, git, slack, jira)
-              runModeInfo(arguments.runMode) *> arguments.command.get.runCommand(ctx)
-            }
+            runEffect[IO](config, arguments)
         }
     }
   }
 
-  private def runModeInfo(runMode: RunMode): IO[Unit] =
+  private def runEffect[F[_]: Effect](config: Config, arguments: Arguments): F[ExitCode] = {
+    val systems: Resource[F, (Jira[F], Git[F])] = for {
+      jira <- Jira.mkJira(config.jira)
+      git <- Git.mkGit(GitConfig(arguments.gitPath))
+    } yield (jira, git)
+
+    systems.use { case (jira, git) =>
+      val users = Users(config.users)
+      val slack = new Slack[F](config.slack, users, arguments.runMode)
+      val ctx = Ctx[F](users, git, slack, jira)
+      runModeInfo[F](arguments.runMode) *> arguments.command.get.runCommand(ctx)
+    }
+  }
+
+  private def runModeInfo[F[_]: Effect](runMode: RunMode): F[Unit] =
     runMode match {
       case RunMode.Dry => putStrLn("Running in Dry Mode, won't send notifications")
       case RunMode.Safe => putStrLn("Running in Safe Mode, will ask before sending notifications")

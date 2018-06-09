@@ -3,7 +3,7 @@ package com.irritant.systems.jira
 import java.net.URI
 import java.util.concurrent.{CompletableFuture, ExecutionException}
 
-import cats.effect.{IO, Resource}
+import cats.effect.{Effect, IO, Resource}
 import com.atlassian.jira.rest.client.api.JiraRestClient
 import com.atlassian.jira.rest.client.api.domain.{SearchResult, Issue => JiraIssue, User => JUser}
 import com.atlassian.jira.rest.client.internal.async.AsynchronousJiraRestClientFactory
@@ -19,18 +19,18 @@ import scala.compat.java8.FutureConverters._
 import scala.util.Try
 import scala.util.matching.Regex
 
-class Jira (cfg: JiraCfg, restClient: JiraRestClient) {
+class Jira[F[_]](cfg: JiraCfg, restClient: JiraRestClient)(implicit F: Effect[F]) {
 
   import Jira._
 
-  def inTestingAndMissingInstructions(): IO[Iterable[Issue]] =
+  def inTestingAndMissingInstructions(): F[Iterable[Issue]] =
     searchJql(currentlyInTesting())
       .map(_.getIssues.asScala.filter(missingInstructions)
         .map(Issue.fromJiraIssue(cfg))
       )
 
-  def findTesters[R[_] : NonEmptyTraverse](tickets: R[Key]): IO[R[Issue]] = {
-    val ioIssues = searchJql(byKeys(tickets)).map(_.getIssues.asScala)
+  def findTesters[R[_] : NonEmptyTraverse](tickets: R[Key]): F[R[Issue]] = {
+    val ioIssues: F[Iterable[JiraIssue]] = searchJql(byKeys(tickets)).map(_.getIssues.asScala)
 
     // todo: what to do with tickets that were not found? eg. could be misspelled commit message
     def attachTester(issues: Iterable[JiraIssue])(key: Key): Issue =
@@ -41,13 +41,13 @@ class Jira (cfg: JiraCfg, restClient: JiraRestClient) {
     ioIssues.map(issues => tickets.map(attachTester(issues)))
   }
 
-  private def searchJql(expr: Expr): IO[SearchResult] =
-    IO.fromFuture(IO(
+  private def searchJql(expr: Expr): F[SearchResult] =
+    F.liftIO(IO.fromFuture(IO(
       makeCompletableFuture(restClient.getSearchClient.searchJql(expr.compile, null, null, AllFields)).toScala
-    ))
+    )))
 
-  private def close(): IO[Unit] =
-    IO(restClient.close())
+  private def close(): F[Unit] =
+    F.delay(restClient.close())
 }
 
 object Jira {
@@ -112,11 +112,11 @@ object Jira {
     }
   }
 
-  def mkJira(config: JiraCfg): Resource[IO, Jira] = {
-    def acquire: IO[Jira]= {
+  def mkJira[F[_]](config: JiraCfg)(implicit F: Effect[F]): Resource[F, Jira[F]] = {
+    def acquire = {
       val factory = new AsynchronousJiraRestClientFactory()
-      IO(factory.createWithBasicHttpAuthentication(config.uri, config.username, config.password))
-        .map(client => new Jira(config, client))
+      F.delay(factory.createWithBasicHttpAuthentication(config.uri, config.username, config.password))
+        .map(client => new Jira[F](config, client))
     }
     Resource.make(acquire)(jira => jira.close())
   }
