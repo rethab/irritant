@@ -8,7 +8,6 @@ import com.irritant._
 import com.irritant.Utils.{getLine, putStrLn}
 import com.irritant.systems.jira.Jira.Implicits._
 import cats.implicits._
-import com.flyberrycapital.slack.Responses.PostMessageResponse
 import com.irritant.RunMode.{Dry, Safe, Yolo}
 import com.irritant.systems.jira.Jira.{Issue, JiraUser}
 
@@ -98,10 +97,7 @@ class Slack[F[_]](config: SlackCfg, users: Users, runMode: RunMode)(implicit F: 
 
     def doSend(): F[Unit] =
       F
-        .async { cb: (Either[Throwable, PostMessageResponse] => Unit) =>
-          val res = api.chat.postMessage(user.slack.userId, slackMessage, Map("as_user" -> "false", "username" -> config.postAsUser))
-          cb(res.asRight[Throwable])
-        }
+        .delay(api.chat.postMessage(user.slack.userId, slackMessage, Map("as_user" -> "false", "username" -> config.postAsUser)))
         .flatMap(_ => // throws exceptions for all non-200
           putStrLn(show"Sent message to ${user.prettyName} about $messageInfo"))
 

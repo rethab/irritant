@@ -1,21 +1,20 @@
 package com.irritant.systems.jira
 
 import java.net.URI
-import java.util.concurrent.{CompletableFuture, ExecutionException}
 
-import cats.effect.{Effect, IO, Resource}
+import cats.effect.{Effect, Resource}
 import com.atlassian.jira.rest.client.api.JiraRestClient
 import com.atlassian.jira.rest.client.api.domain.{SearchResult, Issue => JiraIssue, User => JUser}
 import com.atlassian.jira.rest.client.internal.async.AsynchronousJiraRestClientFactory
 import com.irritant.JiraCfg
 import cats.{Eq, NonEmptyTraverse, Order, Show}
 import cats.implicits._
+import com.google.common.util.concurrent.FutureCallback
 import com.irritant.systems.jira.Jql.{And, Expr}
 import com.irritant.systems.jira.Jql.Predef._
 import org.codehaus.jettison.json.JSONObject
 
 import scala.collection.JavaConverters._
-import scala.compat.java8.FutureConverters._
 import scala.util.Try
 import scala.util.matching.Regex
 
@@ -42,9 +41,16 @@ class Jira[F[_]](cfg: JiraCfg, restClient: JiraRestClient)(implicit F: Effect[F]
   }
 
   private def searchJql(expr: Expr): F[SearchResult] =
-    F.liftIO(IO.fromFuture(IO(
-      makeCompletableFuture(restClient.getSearchClient.searchJql(expr.compile, null, null, AllFields)).toScala
-    )))
+    F.async { cb =>
+      restClient.getSearchClient
+        .searchJql(expr.compile, null, null, AllFields)
+        .`then`(new FutureCallback[SearchResult] {
+          override def onFailure(t: Throwable): Unit = cb(Left(t))
+          override def onSuccess(result: SearchResult): Unit = cb(Right(result))
+        })
+      ()
+    }
+
 
   private def close(): F[Unit] =
     F.delay(restClient.close())
@@ -147,16 +153,4 @@ object Jira {
       issueDescription <- Option(issue.getDescription)
       } yield issueType == "Bug" && issueDescription.contains("Steps")
     ).getOrElse(false)
-
-
-  private def makeCompletableFuture[A](future: java.util.concurrent.Future[A]): CompletableFuture[A] = {
-    CompletableFuture.supplyAsync(() => {
-      try {
-        future.get()
-      } catch {
-        case e: InterruptedException => throw new RuntimeException(e);
-        case e: ExecutionException => throw new RuntimeException(e);
-      }
-    })
-  }
 }
