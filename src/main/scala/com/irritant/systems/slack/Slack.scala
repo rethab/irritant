@@ -2,7 +2,7 @@ package com.irritant.systems.slack
 
 import cats.NonEmptyTraverse
 import cats.data.{NonEmptyList, NonEmptySet}
-import cats.effect.Effect
+import cats.effect.{Effect, IO}
 import com.flyberrycapital.slack.SlackClient
 import com.irritant._
 import com.irritant.Utils.{getLine, putStrLn}
@@ -13,7 +13,7 @@ import com.irritant.systems.jira.Jira.{Issue, JiraUser}
 
 import scala.concurrent.duration._
 
-class Slack[F[_]](config: SlackCfg, users: Users, runMode: RunMode)(implicit F: Effect[F]) {
+class Slack[F[_]](config: SlackCfg, users: Users, runMode: RunMode, threadPools: ThreadPools)(implicit F: Effect[F]) {
 
   import Slack._
 
@@ -96,15 +96,19 @@ class Slack[F[_]](config: SlackCfg, users: Users, runMode: RunMode)(implicit F: 
   private def sendSlackMsg(user: User, slackMessage: String, messageInfo: String): F[Unit] = {
 
     def doSend(): F[Unit] =
-      F
-        .delay(api.chat.postMessage(user.slack.userId, slackMessage, Map("as_user" -> "false", "username" -> config.postAsUser)))
-        .flatMap(_ => // throws exceptions for all non-200
-          putStrLn(show"Sent message to ${user.prettyName} about $messageInfo"))
+      for {
+        _ <- F.liftIO(IO.shift(threadPools.blocking))
+        // FIXME: how to handle exceptions? we still want to shift the thread..
+        _ <- F.delay(api.chat.postMessage(user.slack.userId, slackMessage, Map("as_user" -> "false", "username" -> config.postAsUser)))
+        _ <- F.liftIO(IO.shift(threadPools.computation))
+        _ <- putStrLn(show"Sent message to ${user.prettyName} about $messageInfo")
+      } yield ()
 
     runMode match {
       case Dry =>
         putStrLn(show"Dry: Slack message to user ${user.slack.userId} (${user.prettyName}: $slackMessage")
       case Safe =>
+        implicit val pools: ThreadPools = threadPools
         (putStrLn(show"Send Slack Notification to ${user.prettyName} about $messageInfo? [y/n]") *> getLine).flatMap { answer =>
           if (answer.trim == "y" || answer.trim == "Y") doSend()
           else putStrLn(show"Not sending message to ${user.prettyName} about $messageInfo")

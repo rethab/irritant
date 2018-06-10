@@ -1,9 +1,9 @@
 package com.irritant.systems.git
 
-import cats.effect.{Effect, Resource}
+import cats.effect.{Effect, IO, Resource}
 import cats.kernel.Eq
 import cats.implicits._
-import com.irritant.GitConfig
+import com.irritant.{GitConfig, ThreadPools}
 import org.eclipse.jgit.api.{Git => JGit}
 import org.eclipse.jgit.revwalk.RevCommit
 
@@ -12,7 +12,7 @@ import scala.collection.JavaConverters._
 /**
  * JGit Cookbook: https://github.com/centic9/jgit-cookbook
  */
-class Git[F[_]](git: JGit)(implicit F: Effect[F]) {
+class Git[F[_]](git: JGit, threadPools: ThreadPools)(implicit F: Effect[F]) {
 
   import Git._
 
@@ -24,15 +24,20 @@ class Git[F[_]](git: JGit)(implicit F: Effect[F]) {
    */
   def guessRange(): F[Option[(VersionWithId, VersionWithId)]] = {
     for {
+      _ <- F.liftIO(IO.shift(threadPools.blocking))
       masterRef <- F.delay(git.getRepository.exactRef(MasterRef))
       commits <- F.delay(git.log().add(masterRef.getObjectId).setMaxCount(100).call().asScala)
+      _ <- F.liftIO(IO.shift(threadPools.computation))
     } yield extractVersions(commits.toList)
   }
 
   def showDiff(start: VersionWithId, end: VersionWithId): F[Seq[Commit]] = {
     val callCommand = git.log().addRange(end._2, start._2)
-    F.delay(callCommand.call())
-      .map(_.asScala.drop(1).map(c => Commit(c.getShortMessage)).toSeq)
+    for {
+      _ <- F.liftIO(IO.shift(threadPools.blocking))
+      commits <- F.delay(callCommand.call())
+      _ <- F.liftIO(IO.shift(threadPools.computation))
+    } yield commits.asScala.drop(1).map(c => Commit(c.getShortMessage)).toSeq
   }
 
   private def close(): F[Unit] =
@@ -80,7 +85,7 @@ object Git {
 
   case class Commit(msg: String) extends AnyVal
 
-  def mkGit[F[_]](cfg: GitConfig)(implicit F: Effect[F]): Resource[F, Git[F]] =
-    Resource.make(F.delay(new Git[F](JGit.open(cfg.repo))))(_.close())
+  def mkGit[F[_]](cfg: GitConfig, threadPools: ThreadPools)(implicit F: Effect[F]): Resource[F, Git[F]] =
+    Resource.make(F.delay(new Git[F](JGit.open(cfg.repo), threadPools)))(_.close())
 
 }

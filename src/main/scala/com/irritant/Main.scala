@@ -38,14 +38,15 @@ object Main extends IOApp {
   }
 
   private def runEffect[F[_]: Effect](config: Config, arguments: Arguments): F[ExitCode] = {
-    val systems: Resource[F, (Jira[F], Git[F])] = for {
-      jira <- Jira.mkJira(config.jira)
-      git <- Git.mkGit(GitConfig(arguments.gitPath))
-    } yield (jira, git)
+    val systems: Resource[F, (Jira[F], Git[F], ThreadPools)] = for {
+      threadPools <- ThreadPools.default
+      jira <- Jira.mkJira(config.jira, threadPools)
+      git <- Git.mkGit(GitConfig(arguments.gitPath), threadPools)
+    } yield (jira, git, threadPools)
 
-    systems.use { case (jira, git) =>
+    systems.use { case (jira, git, threadPools) =>
       val users = Users(config.users)
-      val slack = new Slack[F](config.slack, users, arguments.runMode)
+      val slack = new Slack[F](config.slack, users, arguments.runMode, threadPools)
       val ctx = Ctx[F](users, git, slack, jira)
       runModeInfo[F](arguments.runMode) *> arguments.command.get.runCommand(ctx)
     }

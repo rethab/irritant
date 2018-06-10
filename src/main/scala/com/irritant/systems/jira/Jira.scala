@@ -2,11 +2,11 @@ package com.irritant.systems.jira
 
 import java.net.URI
 
-import cats.effect.{Effect, Resource}
+import cats.effect.{Effect, IO, Resource}
 import com.atlassian.jira.rest.client.api.JiraRestClient
 import com.atlassian.jira.rest.client.api.domain.{SearchResult, Issue => JiraIssue, User => JUser}
 import com.atlassian.jira.rest.client.internal.async.AsynchronousJiraRestClientFactory
-import com.irritant.JiraCfg
+import com.irritant.{JiraCfg, ThreadPools}
 import cats.{Eq, NonEmptyTraverse, Order, Show}
 import cats.implicits._
 import com.google.common.util.concurrent.FutureCallback
@@ -18,7 +18,7 @@ import scala.collection.JavaConverters._
 import scala.util.Try
 import scala.util.matching.Regex
 
-class Jira[F[_]](cfg: JiraCfg, restClient: JiraRestClient)(implicit F: Effect[F]) {
+class Jira[F[_]](cfg: JiraCfg, restClient: JiraRestClient, threadPools: ThreadPools)(implicit F: Effect[F]) {
 
   import Jira._
 
@@ -40,16 +40,26 @@ class Jira[F[_]](cfg: JiraCfg, restClient: JiraRestClient)(implicit F: Effect[F]
     ioIssues.map(issues => tickets.map(attachTester(issues)))
   }
 
-  private def searchJql(expr: Expr): F[SearchResult] =
-    F.async { cb =>
-      restClient.getSearchClient
-        .searchJql(expr.compile, null, null, AllFields)
-        .`then`(new FutureCallback[SearchResult] {
-          override def onFailure(t: Throwable): Unit = cb(Left(t))
-          override def onSuccess(result: SearchResult): Unit = cb(Right(result))
-        })
-      ()
-    }
+  private def searchJql(expr: Expr): F[SearchResult] = {
+
+    def completeAsync(cb: Either[Throwable, SearchResult] => Unit): FutureCallback[SearchResult] =
+      new FutureCallback[SearchResult] {
+        override def onFailure(t: Throwable): Unit = cb(Left(t))
+        override def onSuccess(result: SearchResult): Unit = cb(Right(result))
+      }
+
+    val query = expr.compile
+    for {
+      _ <- F.liftIO(IO.shift(threadPools.dispatcher))
+      res <- F.async { (cb: Either[Throwable, SearchResult] => Unit) =>
+        restClient.getSearchClient
+          .searchJql(query, null, null, AllFields)
+          .`then`(completeAsync(cb))
+        ()
+      }
+      _ <- F.liftIO(IO.shift(threadPools.computation))
+    } yield res
+  }
 
 
   private def close(): F[Unit] =
@@ -118,11 +128,11 @@ object Jira {
     }
   }
 
-  def mkJira[F[_]](config: JiraCfg)(implicit F: Effect[F]): Resource[F, Jira[F]] = {
+  def mkJira[F[_]](config: JiraCfg, threadPools: ThreadPools)(implicit F: Effect[F]): Resource[F, Jira[F]] = {
     def acquire = {
       val factory = new AsynchronousJiraRestClientFactory()
       F.delay(factory.createWithBasicHttpAuthentication(config.uri, config.username, config.password))
-        .map(client => new Jira[F](config, client))
+        .map(client => new Jira[F](config, client, threadPools))
     }
     Resource.make(acquire)(jira => jira.close())
   }
