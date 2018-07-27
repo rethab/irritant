@@ -150,12 +150,10 @@ object Jira {
 
   private def containsTestInstructions(i: JiraIssue): Boolean =
     Set(
-        "Testing instructions"
-      , "testing instructions"
-      , "Testing Instructions"
-      , "Test Instructions"
-      , "Test instructions"
-    ).exists(title => i.getComments.asScala.exists(_.getBody.contains(title)))
+        "testing instructions"
+      , "test instructions"
+      , "testing:" // be a bit defensive, this string could be anywhere without colon
+    ).exists(title => i.getComments.asScala.exists(_.getBody.toLowerCase.contains(title)))
 
   private def isBugWithSteps(issue: JiraIssue): Boolean =
     ( for {
