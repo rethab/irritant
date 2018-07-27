@@ -12,6 +12,7 @@ This is intended for teams that use several tools and need them to work together
 For example, it can search jira tickets based on commits in git and notify the committers in slack about missing data, upon deployment etc.
 
 ## Configuration
+You may use the option `-Dconfig.file=/my/path/to/config.conf` to specify a config file in a non-standard locaiton.
 
 ### Configure access to Jira:
 
