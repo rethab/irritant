@@ -150,6 +150,7 @@ object Jira {
     Set(
         "testing instructions"
       , "test instructions"
+      , "for testers"
       , "testing:" // be a bit defensive, this string could be anywhere without colon
     ).exists(title => i.getComments.asScala.exists(_.getBody.toLowerCase.contains(title)))
 

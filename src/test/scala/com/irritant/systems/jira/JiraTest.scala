@@ -62,7 +62,7 @@ class JiraTest extends WordSpec with OptionValues with Inside with MustMatchers 
 
       "not be missing if feature w/ instructions" in {
         Jira.missingInstructions(mkIssue(
-          issueType = "Fature",
+          issueType = "Feature",
           description = "This is a feature",
           comment = "Test Instructions:"
         )) must be(false)
@@ -70,10 +70,18 @@ class JiraTest extends WordSpec with OptionValues with Inside with MustMatchers 
 
       "be missing if feature w/o steps" in {
         Jira.missingInstructions(mkIssue(
-          issueType = "Fature",
+          issueType = "Feature",
           description = "This is a feature",
           comment = "some random comment"
         )) must be(true)
+      }
+
+      "not be missing if feature w/ steps and title 'for testers'" in {
+        Jira.missingInstructions(mkIssue(
+          issueType = "Feature",
+          description = "This is a feature",
+          comment = "For Testers:\ntesters need to do x\nand y"
+        )) must be(false)
       }
     }
   }
