@@ -2,7 +2,7 @@ package com.irritant.systems.jira
 
 import java.net.URI
 
-import cats.effect.{Effect, IO, Resource}
+import cats.effect.{Effect, Resource}
 import com.atlassian.jira.rest.client.api.JiraRestClient
 import com.atlassian.jira.rest.client.api.domain.{SearchResult, Issue => JiraIssue, User => JUser}
 import com.atlassian.jira.rest.client.internal.async.AsynchronousJiraRestClientFactory
@@ -50,14 +50,12 @@ class Jira[F[_]](cfg: JiraCfg, restClient: JiraRestClient, threadPools: ThreadPo
 
     val query = expr.compile
     for {
-      _ <- F.liftIO(IO.shift(threadPools.dispatcher))
-      res <- F.async { (cb: Either[Throwable, SearchResult] => Unit) =>
+      res <- threadPools.runDispatching { (cb: Either[Throwable, SearchResult] => Unit) =>
         restClient.getSearchClient
           .searchJql(query, null, null, AllFields)
           .`then`(completeAsync(cb))
         ()
       }
-      _ <- F.liftIO(IO.shift(threadPools.computation))
     } yield res
   }
 

@@ -1,6 +1,6 @@
 package com.irritant.systems.git
 
-import cats.effect.{Effect, IO, Resource}
+import cats.effect.{Effect, Resource}
 import cats.kernel.Eq
 import cats.implicits._
 import com.irritant.{GitConfig, ThreadPools}
@@ -23,21 +23,19 @@ class Git[F[_]](git: JGit, threadPools: ThreadPools)(implicit F: Effect[F]) {
    * to create a diff from.
    */
   def guessRange(): F[Option[(VersionWithId, VersionWithId)]] = {
-    for {
-      _ <- F.liftIO(IO.shift(threadPools.blocking))
-      masterRef <- F.delay(git.getRepository.exactRef(MasterRef))
-      commits <- F.delay(git.log().add(masterRef.getObjectId).setMaxCount(100).call().asScala)
-      _ <- F.liftIO(IO.shift(threadPools.computation))
-    } yield extractVersions(commits.toList)
+    threadPools.runBlockingF {
+      for {
+        masterRef <- F.delay(git.getRepository.exactRef(MasterRef))
+        commits <- F.delay(git.log().add(masterRef.getObjectId).setMaxCount(100).call().asScala)
+      } yield extractVersions(commits.toList)
+    }
   }
 
   def showDiff(start: VersionWithId, end: VersionWithId): F[Seq[Commit]] = {
     val callCommand = git.log().addRange(end._2, start._2)
-    for {
-      _ <- F.liftIO(IO.shift(threadPools.blocking))
-      commits <- F.delay(callCommand.call())
-      _ <- F.liftIO(IO.shift(threadPools.computation))
-    } yield commits.asScala.drop(1).map(c => Commit(c.getShortMessage)).toSeq
+    threadPools
+      .runBlocking(callCommand.call())
+      .map(_.asScala.drop(1).map(c => Commit(c.getShortMessage)).toSeq)
   }
 
   private def close(): F[Unit] =

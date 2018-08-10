@@ -2,7 +2,7 @@ package com.irritant.systems.slack
 
 import cats.NonEmptyTraverse
 import cats.data.{NonEmptyList, NonEmptySet}
-import cats.effect.{Effect, IO}
+import cats.effect.Effect
 import com.flyberrycapital.slack.SlackClient
 import com.irritant._
 import com.irritant.Utils.{getLine, putStrLn}
@@ -97,10 +97,7 @@ class Slack[F[_]](config: SlackCfg, users: Users, runMode: RunMode, threadPools:
 
     def doSend(): F[Unit] =
       for {
-        _ <- F.liftIO(IO.shift(threadPools.blocking))
-        // FIXME: how to handle exceptions? we still want to shift the thread..
-        _ <- F.delay(api.chat.postMessage(user.slack.userId, slackMessage, Map("as_user" -> "false", "username" -> config.postAsUser)))
-        _ <- F.liftIO(IO.shift(threadPools.computation))
+        _ <- threadPools.runBlocking(api.chat.postMessage(user.slack.userId, slackMessage, Map("as_user" -> "false", "username" -> config.postAsUser)))
         _ <- putStrLn(show"Sent message to ${user.prettyName} about $messageInfo")
       } yield ()
 

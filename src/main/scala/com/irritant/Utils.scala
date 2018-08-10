@@ -1,7 +1,6 @@
 package com.irritant
 
-import cats.effect.{Effect, IO}
-import cats.implicits._
+import cats.effect.Effect
 
 import scala.io.StdIn
 
@@ -11,10 +10,6 @@ object Utils {
     implicitly[Effect[F]].delay(println(str))
 
   def getLine[F[_]](implicit F: Effect[F], threadPools: ThreadPools): F[String] =
-    for {
-      _ <- F.liftIO(IO.shift(threadPools.blocking))
-      res <- F.delay(StdIn.readLine())
-      _ <- F.liftIO(IO.shift(threadPools.computation))
-    } yield res
+    threadPools.runBlocking(StdIn.readLine())
 
 }
