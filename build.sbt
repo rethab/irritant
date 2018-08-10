@@ -17,7 +17,7 @@ libraryDependencies ++= Seq(
   , "org.scala-lang.modules"            %% "scala-java8-compat"                  % "0.9.0"
   , "com.atlassian.fugue"                % "fugue"                               % "2.7.0"
   , "com.flyberrycapital"               %% "scala-slack"                         % "0.3.1"
-  , "org.eclipse.jgit"                   % "org.eclipse.jgit"                    % "5.0.1.201806211838-r"
+  , "org.eclipse.jgit"                   % "org.eclipse.jgit"                    % "5.0.2.201807311906-r"
 
   // TEST
   , "org.scalatest"                     %% "scalatest"                           % "3.0.5"                          % "test"
