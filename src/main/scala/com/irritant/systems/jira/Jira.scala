@@ -28,6 +28,12 @@ class Jira[F[_]](cfg: JiraCfg, restClient: JiraRestClient, threadPools: ThreadPo
         .map(Issue.fromJiraIssue(cfg))
       )
 
+  def unresolvedInCurrentSprint(): F[Iterable[Issue]] =
+    searchJql(currentSprintAndUnresolved())
+      .map(_.getIssues.asScala.filterNot(postRelease)
+        .map(Issue.fromJiraIssue(cfg))
+      )
+
   def findTesters[R[_] : NonEmptyTraverse](tickets: R[Key]): F[R[Issue]] = {
     val ioIssues: F[Iterable[JiraIssue]] = searchJql(byKeys(tickets)).map(_.getIssues.asScala)
 
@@ -138,8 +144,14 @@ object Jira {
   private def currentlyInTesting(): Expr =
     And(EqStatus("In Testing"), OpenSprints)
 
+  private def currentSprintAndUnresolved(): Expr =
+    And(IsEmpty("Resolution"), OpenSprints)
+
   private def byKeys[R[_] : NonEmptyTraverse](tickets: R[Key]): Expr =
     InKeys(tickets.map(_.key))
+
+  def postRelease(i: JiraIssue): Boolean =
+    Option(i.getSummary).exists(_.toLowerCase.contains("post-release"))
 
   /** Bugs with reproduction steps don't need test
    * instructions, everything else does. */

@@ -3,7 +3,7 @@ package com.irritant
 import cats.data.EitherT
 import cats.effect.{Effect, ExitCode}
 import cats.implicits._
-import com.irritant.Commands.Command.{NotifyDeployedTickets, NotifyMissingTestInstructions}
+import com.irritant.Commands.Command.{NotifyDeployedTickets, NotifyMissingTestInstructions, NotifyUnresolvedTickets}
 import com.irritant.Utils._
 import com.irritant.systems.git.Git
 import com.irritant.systems.jira.Jira
@@ -22,6 +22,7 @@ object Commands {
   val allCommands: Seq[Command] = Seq(
       NotifyDeployedTickets
     , NotifyMissingTestInstructions
+    , NotifyUnresolvedTickets
   )
 
   sealed trait Command {
@@ -75,6 +76,18 @@ object Commands {
       override def runCommand[F[_]: Effect](ctx: Ctx[F]): F[ExitCode] = {
         ctx.jira.inTestingAndMissingInstructions()
           .flatMap(ctx.slack.testIssuesWithoutInstructions)
+          .map(_ => ExitCode.Success)
+      }
+    }
+
+    case object NotifyUnresolvedTickets extends Command {
+
+      val cmd = "notify-unresolved-tickets"
+      val infoText = "Notify people in slack if their tickets unresolved in the current sprint"
+
+      override def runCommand[F[_]: Effect](ctx: Ctx[F]): F[ExitCode] = {
+        ctx.jira.unresolvedInCurrentSprint()
+          .flatMap(ctx.slack.unresolvedIssues)
           .map(_ => ExitCode.Success)
       }
     }

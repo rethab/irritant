@@ -49,6 +49,35 @@ class Slack[F[_]](config: SlackCfg, users: Users, runMode: RunMode, threadPools:
       .map(_ => ())
   }
 
+  def unresolvedIssues(issues: Iterable[Issue]): F[Unit] = {
+
+    val allIssues = issues.toList.groupByNel(_.assignee)
+
+    val unassingedIssues: Iterable[Issue] = allIssues.collect { case (None, is) => is.toList }.flatten
+    val issuesByUser = allIssues.collect { case (Some(u), is) => (users.findByJira(u).toRight(u), is) }
+    val unmappedUsers = issuesByUser.collect { case (Left(jUser), is) => (jUser, is) }
+    val mappedUsers: Map[User, NonEmptyList[Issue]] = issuesByUser.collect { case (Right(user), is) => (user, is) }
+
+    unassingedIssues.foreach { i =>
+      putStrLn(show"Issue ${i.key} is in testing, but not assigned")
+    }
+
+    unmappedUsers.foreach { case (user, is) =>
+      putStrLn(show"User ${user.username} is not mapped to slack and issues: ${is.toList.mkString(",")}")
+    }
+
+    mappedUsers
+      .toList
+      .map { case (user, is) =>
+        sendSlackMsg(
+          user = user,
+          slackMessage = unresolvedIssuesMsg(user, is),
+          messageInfo = show"${is.size} unresolved issues")
+      }
+      .sequence[F, Unit]
+      .map(_ => ())
+  }
+
   def readyForTesting(forTesting: NonEmptyList[Issue]): F[Unit] = {
 
     /* notify tester if tester is set
@@ -144,6 +173,24 @@ object Slack {
           |
         """.stripMargin
   }
+
+  private def unresolvedIssuesMsg[R[_]: NonEmptyTraverse](user: User, is: R[Issue]): String = {
+    def issueTitle(i: Issue): String = i.summary.getOrElse(i.key.show)
+    val issueList: String = is
+      .map(i => show" - ${issueTitle(i)} : ${i.userLink.toString}")
+      .intercalate("\n")
+
+    show"""
+          |Hi ${user.prettyName},
+          |
+          |it's getting late in the sprint and the following issues are still unresolved. Please consider moving them:
+          |$issueList
+          |
+          |Thanks :)
+          |
+        """.stripMargin
+  }
+
 
   private def readyForTestingMsg[R[_]: NonEmptyTraverse](tester: User, tickets: R[Issue]): String = {
     val issueList = tickets.map(i => show" - ${i.key}").intercalate("\n")

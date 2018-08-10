@@ -66,6 +66,12 @@ The commits are found by searching for commit messages like `version: 123.1.2` a
 
 Searches all tickets in jira that are in the current sprint and in testing, but don't have any comment with the text `test instructions`.
 
+### Notify Unresolved Tickets
+`sbt "runMain com.irritant.Main notify-unresolved-tickets --git-path=/path/to/git/repo"`
+
+Searches all tickets in jira that are in the current sprint and unresolved and sends slack messages to the assignees.
+This is meant to be used late in the sprint to remind people to update their tickets.
+
 ### Your own?
 See `com.irritant.Commands` as a starting point
 
