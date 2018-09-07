@@ -7,9 +7,9 @@ scalaVersion := "2.12.6"
 libraryDependencies ++= Seq(
 
   // CORE
-    "org.typelevel"                     %% "cats-core"                           % "1.2.0"
-  , "org.typelevel"                     %% "cats-effect"                         % "1.0.0-RC2"
-  , "com.github.pureconfig"             %% "pureconfig"                          % "0.9.1"
+    "org.typelevel"                     %% "cats-core"                           % "1.3.1"
+  , "org.typelevel"                     %% "cats-effect"                         % "1.0.0"
+  , "com.github.pureconfig"             %% "pureconfig"                          % "0.9.2"
   , "com.github.scopt"                  %% "scopt"                               % "3.7.0"
 
   // SYSTEMS
