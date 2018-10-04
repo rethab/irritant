@@ -9,9 +9,9 @@ import com.atlassian.jira.rest.client.internal.async.AsynchronousJiraRestClientF
 import com.irritant.{JiraCfg, ThreadPools}
 import cats.{Eq, NonEmptyTraverse, Order, Show}
 import cats.implicits._
-import com.google.common.util.concurrent.FutureCallback
 import com.irritant.systems.jira.Jql.{And, Expr}
 import com.irritant.systems.jira.Jql.Predef._
+import io.atlassian.util.concurrent.Promise.TryConsumer
 import org.codehaus.jettison.json.JSONObject
 
 import scala.collection.JavaConverters._
@@ -48,10 +48,10 @@ class Jira[F[_]](cfg: JiraCfg, restClient: JiraRestClient, threadPools: ThreadPo
 
   private def searchJql(expr: Expr): F[SearchResult] = {
 
-    def completeAsync(cb: Either[Throwable, SearchResult] => Unit): FutureCallback[SearchResult] =
-      new FutureCallback[SearchResult] {
-        override def onFailure(t: Throwable): Unit = cb(Left(t))
-        override def onSuccess(result: SearchResult): Unit = cb(Right(result))
+    def completeAsync(cb: Either[Throwable, SearchResult] => Unit): TryConsumer[SearchResult] =
+      new TryConsumer[SearchResult] {
+        override def fail(t: Throwable): Unit = cb(Left(t))
+        override def accept(result: SearchResult): Unit = cb(Right(result))
       }
 
     val query = expr.compile
