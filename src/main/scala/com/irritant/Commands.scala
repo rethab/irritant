@@ -3,7 +3,7 @@ package com.irritant
 import cats.data.EitherT
 import cats.effect.{Effect, ExitCode}
 import cats.implicits._
-import com.irritant.Commands.Command.{NotifyDeployedTickets, NotifyMissingTestInstructions, NotifyUnresolvedTickets}
+import com.irritant.Commands.Command.{ListJiraUsers, NotifyDeployedTickets, NotifyMissingTestInstructions, NotifyUnresolvedTickets}
 import com.irritant.Utils._
 import com.irritant.systems.git.Git
 import com.irritant.systems.jira.Jira
@@ -23,6 +23,7 @@ object Commands {
       NotifyDeployedTickets
     , NotifyMissingTestInstructions
     , NotifyUnresolvedTickets
+    , ListJiraUsers
   )
 
   sealed trait Command {
@@ -88,6 +89,18 @@ object Commands {
       override def runCommand[F[_]: Effect](ctx: Ctx[F]): F[ExitCode] = {
         ctx.jira.unresolvedInCurrentSprint()
           .flatMap(ctx.slack.unresolvedIssues)
+          .map(_ => ExitCode.Success)
+      }
+    }
+
+    case object ListJiraUsers extends Command {
+
+      val cmd = "list-jira-users"
+      val infoText = "Lists all known JIRA users. Helpful to setup an initial config."
+
+      override def runCommand[F[_]: Effect](ctx: Ctx[F]): F[ExitCode] = {
+        ctx.jira.listAllUsers()
+          .flatMap(_.map(u => putStrLn(u.username)).sequence)
           .map(_ => ExitCode.Success)
       }
     }

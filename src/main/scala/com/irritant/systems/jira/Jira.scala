@@ -11,6 +11,7 @@ import cats.{Eq, NonEmptyTraverse, Order, Show}
 import cats.implicits._
 import com.irritant.systems.jira.Jql.{And, Expr}
 import com.irritant.systems.jira.Jql.Predef._
+import io.atlassian.util.concurrent.Promise
 import io.atlassian.util.concurrent.Promise.TryConsumer
 import org.codehaus.jettison.json.JSONObject
 
@@ -46,25 +47,14 @@ class Jira[F[_]](cfg: JiraCfg, restClient: JiraRestClient, threadPools: ThreadPo
     ioIssues.map(issues => tickets.map(attachTester(issues)))
   }
 
-  private def searchJql(expr: Expr): F[SearchResult] = {
+  private def searchJql(expr: Expr): F[SearchResult] =
+    runRestClient(_.getSearchClient
+      .searchJql(expr.compile, null, null, AllFields), restClient, threadPools)
 
-    def completeAsync(cb: Either[Throwable, SearchResult] => Unit): TryConsumer[SearchResult] =
-      new TryConsumer[SearchResult] {
-        override def fail(t: Throwable): Unit = cb(Left(t))
-        override def accept(result: SearchResult): Unit = cb(Right(result))
-      }
-
-    val query = expr.compile
-    for {
-      res <- threadPools.runDispatching { (cb: Either[Throwable, SearchResult] => Unit) =>
-        restClient.getSearchClient
-          .searchJql(query, null, null, AllFields)
-          .`then`(completeAsync(cb))
-        ()
-      }
-    } yield res
-  }
-
+  def listAllUsers(): F[List[JiraUser]] =
+    runRestClient(_.getUserClient
+      .findUsers(AllUsers, 0, MaxUserLimit, true, false), restClient, threadPools)
+      .map(_.asScala.toList.map(u => JiraUser(u.getName)))
 
   private def close(): F[Unit] =
     F.delay(restClient.close())
@@ -73,6 +63,9 @@ class Jira[F[_]](cfg: JiraCfg, restClient: JiraRestClient, threadPools: ThreadPo
 object Jira {
 
   private val AllFields = Set("*all").asJava
+
+  private val AllUsers = "_"
+  private val MaxUserLimit = 1000 // the maximum the api allows
 
   case class JiraUser(username: String) extends AnyVal
 
@@ -172,4 +165,19 @@ object Jira {
       issueDescription <- Option(issue.getDescription)
       } yield issueType == "Bug" && issueDescription.contains("Steps")
     ).getOrElse(false)
+
+  private def runRestClient[F[_]: Effect, T](act: JiraRestClient => Promise[T], restClient: JiraRestClient, threadPools: ThreadPools): F[T] = {
+
+    def completeAsync(cb: Either[Throwable, T] => Unit): TryConsumer[T] =
+      new TryConsumer[T] {
+        override def fail(t: Throwable): Unit = cb(Left(t))
+
+        override def accept(result: T): Unit = cb(Right(result))
+      }
+
+    threadPools.runDispatching { (cb: Either[Throwable, T] => Unit) =>
+      act.apply(restClient).`then`(completeAsync(cb)); ()
+    }
+  }
+
 }

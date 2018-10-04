@@ -15,7 +15,7 @@ libraryDependencies ++= Seq(
   // SYSTEMS
   , "com.atlassian.jira"                 % "jira-rest-java-client-core"          % "5.1.0"
   , "org.scala-lang.modules"            %% "scala-java8-compat"                  % "0.9.0"
-  , "com.atlassian.fugue"                % "fugue"                               % "2.7.0"
+  , "io.atlassian.fugue"                 % "fugue"                               % "4.7.1"
   , "com.flyberrycapital"               %% "scala-slack"                         % "0.3.1"
   , "org.eclipse.jgit"                   % "org.eclipse.jgit"                    % "5.1.1.201809181055-r"
 
