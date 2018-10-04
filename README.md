@@ -72,6 +72,17 @@ Searches all tickets in jira that are in the current sprint and in testing, but 
 Searches all tickets in jira that are in the current sprint and unresolved and sends slack messages to the assignees.
 This is meant to be used late in the sprint to remind people to update their tickets.
 
+### Setup Helpers
+These actions are helpful to setup an initial irritant config, because that involves configuring all user
+mappings from various systems.
+#### List Jira Users
+`sbt "runMain com.irritant.Main list-jira-users --git-path=/path/to/git/repo"`
+
+Lists all known users from jira.
+
+#### List all Slack Users
+Pending, see issues on github..
+
 ### Your own?
 See `com.irritant.Commands` as a starting point
 
