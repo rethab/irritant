@@ -26,7 +26,7 @@ class Git[F[_]](git: JGit, threadPools: ThreadPools)(implicit F: Effect[F]) {
     threadPools.runBlockingF {
       for {
         masterRef <- F.delay(git.getRepository.exactRef(MasterRef))
-        commits <- F.delay(git.log().add(masterRef.getObjectId).setMaxCount(100).call().asScala)
+        commits <- F.delay(git.log().add(masterRef.getObjectId).setMaxCount(MaxCountLimit).call().asScala)
       } yield extractVersions(commits.toList)
     }
   }
@@ -46,6 +46,8 @@ class Git[F[_]](git: JGit, threadPools: ThreadPools)(implicit F: Effect[F]) {
 object Git {
 
   private val MasterRef = "refs/heads/master"
+
+  private val MaxCountLimit = 100
 
   type VersionWithId = (Version, RevCommit)
 

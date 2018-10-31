@@ -29,7 +29,7 @@ object Main extends IOApp {
       case Some(arguments) =>
         Config.load() match {
           case Left(errors) =>
-            System.err.println(show"Failed to read config: ${errors.toList.mkString(", ")}")
+            System.err.println(show"Failed to read config: ${errors.toList.mkString(", ")}") // scalastyle:off
             sys.exit(1)
           case Right(config) =>
             runEffect[IO](config, arguments)

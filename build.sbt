@@ -25,3 +25,12 @@ libraryDependencies ++= Seq(
 
 
 resolvers += "atlassian-public" at "https://m2proxy.atlassian.com/repository/public"
+
+// scalastyle
+// run during compilation
+lazy val compileScalastyle = taskKey[Unit]("compileScalastyle")
+compileScalastyle := scalastyle.in(Compile).toTask("").value
+(compile in Compile) := ((compile in Compile) dependsOn compileScalastyle).value
+// fail compilation on errors
+scalastyleFailOnError := true
+scalastyleFailOnWarning := true
