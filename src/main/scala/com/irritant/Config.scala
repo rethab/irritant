@@ -7,7 +7,8 @@ import cats.Order
 import cats.implicits._
 import com.irritant.systems.jira.Jira.JiraUser
 import com.irritant.systems.slack.Slack.SlackUser
-import pureconfig.{ConfigReader, ConvertHelpers}
+import pureconfig.error.ConfigReaderFailures
+import pureconfig.generic.auto.exportReader
 
 
 case class Config (
@@ -60,8 +61,7 @@ case class GitConfig(
 
 object Config {
 
-  implicit val uriReader: ConfigReader[URI] = ConfigReader.fromString(
-    ConvertHelpers.catchReadError(s => new URI(s))
-  )
+  def load(): Either[ConfigReaderFailures, Config] = pureconfig.loadConfig[Config]
+
 }
 

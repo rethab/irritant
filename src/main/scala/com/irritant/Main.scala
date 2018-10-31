@@ -27,7 +27,7 @@ object Main extends IOApp {
       case None =>
         ExitCode.Error.pure[IO]
       case Some(arguments) =>
-        pureconfig.loadConfig[Config] match {
+        Config.load() match {
           case Left(errors) =>
             System.err.println(show"Failed to read config: ${errors.toList.mkString(", ")}")
             sys.exit(1)
