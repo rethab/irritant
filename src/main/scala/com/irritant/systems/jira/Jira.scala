@@ -4,7 +4,7 @@ import java.net.URI
 
 import cats.effect.{Effect, Resource}
 import com.atlassian.jira.rest.client.api.JiraRestClient
-import com.atlassian.jira.rest.client.api.domain.{SearchResult, Issue => JiraIssue, User => JUser}
+import com.atlassian.jira.rest.client.api.domain.{Issue => JiraIssue, User => JUser}
 import com.atlassian.jira.rest.client.internal.async.AsynchronousJiraRestClientFactory
 import com.irritant.{JiraCfg, ThreadPools}
 import cats.{Eq, NonEmptyTraverse, Order, Show}
@@ -25,18 +25,14 @@ class Jira[F[_]](cfg: JiraCfg, restClient: JiraRestClient, threadPools: ThreadPo
 
   def inTestingAndMissingInstructions(): F[Iterable[Issue]] =
     searchJql(currentlyInTesting())
-      .map(_.getIssues.asScala.filter(missingInstructions)
-        .map(Issue.fromJiraIssue(cfg))
-      )
+      .map(_.filter(missingInstructions).map(Issue.fromJiraIssue(cfg)))
 
   def unresolvedInCurrentSprint(): F[Iterable[Issue]] =
     searchJql(currentSprintAndUnresolved())
-      .map(_.getIssues.asScala.filterNot(postRelease)
-        .map(Issue.fromJiraIssue(cfg))
-      )
+      .map(_.filterNot(postRelease).map(Issue.fromJiraIssue(cfg)))
 
   def findTesters[R[_] : NonEmptyTraverse](tickets: R[Key]): F[R[Issue]] = {
-    val ioIssues: F[Iterable[JiraIssue]] = searchJql(byKeys(tickets)).map(_.getIssues.asScala)
+    val ioIssues: F[Iterable[JiraIssue]] = searchJql(byKeys(tickets))
 
     // todo: what to do with tickets that were not found? eg. could be misspelled commit message
     def attachTester(issues: Iterable[JiraIssue])(key: Key): Issue =
@@ -47,9 +43,21 @@ class Jira[F[_]](cfg: JiraCfg, restClient: JiraRestClient, threadPools: ThreadPo
     ioIssues.map(issues => tickets.map(attachTester(issues)))
   }
 
-  private def searchJql(expr: Expr): F[SearchResult] =
-    runRestClient(_.getSearchClient
-      .searchJql(expr.compile, null, null, AllFields), restClient, threadPools)
+  private def searchJql(expr: Expr): F[Iterable[JiraIssue]] = {
+
+    // eagerly accumulate all results from their pagination
+    def batch(start: Int): F[Iterable[JiraIssue]] = {
+      runRestClient(_
+        .getSearchClient.searchJql(expr.compile, MaxTicketLimit, start, AllFields), restClient, threadPools)
+        .flatMap { sr =>
+          val issues = sr.getIssues.asScala
+          if (issues.size == MaxTicketLimit) batch(start + MaxTicketLimit).map(nxt => issues ++ nxt)
+          else issues.pure[F]
+        }
+    }
+
+    batch(start = 0)
+  }
 
   def listAllUsers(): F[List[JiraUser]] =
     runRestClient(_.getUserClient
@@ -66,6 +74,8 @@ object Jira {
 
   private val AllUsers = "_"
   private val MaxUserLimit = 1000 // the maximum the api allows
+
+  private val MaxTicketLimit = 100
 
   case class JiraUser(username: String) extends AnyVal
 

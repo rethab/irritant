@@ -50,6 +50,7 @@ class Slack[F[_]](config: SlackCfg, users: Users, runMode: RunMode, threadPools:
   }
 
   def unresolvedIssues(issues: Iterable[Issue]): F[Unit] = {
+    println(issues.size)
 
     val allIssues = issues.toList.groupByNel(_.assignee)
 
